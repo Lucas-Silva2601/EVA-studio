@@ -1,0 +1,63 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --vscode-bg: #1e1e1e;
+  --vscode-sidebar: #252526;
+  --vscode-editor: #1e1e1e;
+  --vscode-panel: #181818;
+  --vscode-border: #3c3c3c;
+  --vscode-titlebar: #323233;
+  --vscode-accent: #0e639c;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+/* Resize handles - acessibilidade */
+.resize-handle {
+  cursor: col-resize;
+  user-select: none;
+}
+
+.resize-handle-vertical {
+  cursor: row-resize;
+  user-select: none;
+}
+
+.resize-handle:focus,
+.resize-handle-vertical:focus {
+  outline: 2px solid var(--vscode-accent);
+  outline-offset: -2px;
+}
+
+/* Scrollbars visíveis (Output, Explorador, Chat) */
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: #52525b #27272a;
+}
+.scrollbar-thin::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: #27272a;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: #52525b;
+  border-radius: 5px;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: #71717a;
+}
+.scrollbar-thin::-webkit-scrollbar-corner {
+  background: #27272a;
+}
