@@ -180,12 +180,26 @@ function extractFileNameFromGeminiResponse(rawCode: string): string | null {
   return path ?? null;
 }
 
+/** Detecta se o nome é genérico (file_0.txt, file_1.txt etc.) — indica que a extensão não conseguiu inferir. */
+function isGenericFilename(name: string): boolean {
+  return /^file_\d+\.txt$/i.test(name?.trim() ?? "");
+}
+
 /**
  * Normaliza o payload da extensão para lista de arquivos.
  * Regra: FILE: em todo o texto ou em blocos markdown → usa esse nome. Se não encontrar, pausa com FILENAME_ASK_GROQ (pedir nome antes de salvar).
+ * Fallback: quando extensão envia file_N.txt, tenta inferir nome correto do conteúdo.
  */
 function normalizeToFiles(p: CodeResponsePayload): Array<{ name: string; content: string }> {
-  if (p.files && p.files.length > 0) return p.files;
+  if (p.files && p.files.length > 0) {
+    return p.files.map((f) => {
+      if (isGenericFilename(f.name)) {
+        const inferred = inferFilenameFromContent(f.content);
+        if (inferred) return { name: inferred, content: stripFilenameComment(f.content) };
+      }
+      return f;
+    });
+  }
   if (p.blocks && p.blocks.length > 0) return blocksToFiles(p.blocks);
   const rawCode = (p.code ?? "").trim();
   if (!rawCode) return [];

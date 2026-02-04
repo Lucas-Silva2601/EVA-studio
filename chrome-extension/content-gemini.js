@@ -146,27 +146,63 @@
     return match ? match[1].trim() : null;
   }
 
+  /**
+   * Busca FILE: em todo o bloco (primeiras 10 linhas) — o Gemini pode colocar em qualquer linha inicial.
+   */
+  function parseFileFromContent(code) {
+    const lines = (code || "").split("\n");
+    for (let i = 0; i < Math.min(lines.length, 10); i++) {
+      const match = (lines[i] || "").match(/(?:FILE|filename)\s*:\s*([a-zA-Z0-9._\-/]+)/i);
+      if (match) return match[1].trim();
+    }
+    return null;
+  }
+
+  /**
+   * Infere nome de arquivo com extensão correta a partir do conteúdo (evita file_0.txt).
+   * HTML → index.html; Markdown → checklist.md; etc.
+   */
+  function inferFilenameFromContent(code) {
+    const trimmed = (code || "").trim();
+    if (!trimmed) return null;
+    const first = trimmed.slice(0, 300).toLowerCase();
+    if (first.includes("<!doctype") || first.startsWith("<html") || first.startsWith("<!DOCTYPE")) return "index.html";
+    if (first.includes("<style") || (first.includes("{") && first.includes(":") && first.includes("px") && !first.includes("function")) return "style.css";
+    if (first.includes("import react") || first.includes('from "react"') || first.includes("from 'react'")) return "App.jsx";
+    if (first.includes("function ") || (first.includes("const ") && first.includes("=>")) || first.includes("export ")) return "script.js";
+    if (first.includes("def ") || (first.includes("import ") && !first.includes("react"))) return "script.py";
+    if (first.startsWith("{") || first.startsWith("[")) return "data.json";
+    if (first.startsWith("# ") || first.includes("## ") || first.includes("- [ ]") || first.includes("- [x]")) return "checklist.md";
+    return null;
+  }
+
   function stripFileLine(code) {
     const lines = (code || "").split("\n");
-    if (lines.length > 0 && /(?:FILE|filename)\s*:\s*/i.test(lines[0])) {
-      return lines.slice(1).join("\n").trimStart();
+    for (let i = 0; i < Math.min(lines.length, 10); i++) {
+      if (/(?:FILE|filename)\s*:\s*/i.test(lines[i] || "")) {
+        return lines.slice(i + 1).join("\n").trimStart();
+      }
     }
     return code || "";
   }
 
   function langToExt(lang) {
     const map = { js: "js", javascript: "js", jsx: "jsx", ts: "ts", typescript: "ts", tsx: "tsx", py: "py", python: "py", html: "html", css: "css", json: "json", md: "md" };
-    return map[(lang || "").toLowerCase()] || "txt";
+    return map[(lang || "").toLowerCase()] || "";
   }
 
   /**
    * Converte blocos extraídos em files (name = path, content).
+   * Prioridade: FILE: na primeira linha → FILE: em qualquer linha inicial → inferência do conteúdo → language class → file_N.ext (evita .txt genérico).
    */
   function blocksToFiles(blocks) {
     return blocks.map(function (block, i) {
-      const pathFromLine = parseFileFromFirstLine(block.code);
-      const name = pathFromLine || "file_" + i + "." + langToExt(block.language);
-      const content = pathFromLine ? stripFileLine(block.code) : block.code.trim();
+      const pathFromFirstLine = parseFileFromFirstLine(block.code);
+      const pathFromContent = pathFromFirstLine || parseFileFromContent(block.code);
+      const inferred = inferFilenameFromContent(block.code);
+      const ext = langToExt(block.language);
+      const name = pathFromContent || inferred || (ext ? "file_" + i + "." + ext : "file_" + i + ".txt");
+      const content = pathFromContent ? stripFileLine(block.code) : block.code.trim();
       return { name, content };
     });
   }
