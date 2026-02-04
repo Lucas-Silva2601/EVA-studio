@@ -1,4 +1,4 @@
-# EVA Studio Bridge v2.0 – Extensão Chrome
+# EVA Studio Bridge v3.0 – Extensão Chrome
 
 Ponte de comunicação entre a **IDE EVA Studio** (localhost:3000) e o **Google Gemini** (gemini.google.com). O **Analista (Groq)** orquestra o envio de subtópicos do checklist para o **Gemini**, que atua como Programador. Manifest V3.
 
@@ -8,11 +8,11 @@ Ponte de comunicação entre a **IDE EVA Studio** (localhost:3000) e o **Google 
 2. Ative o **Modo do desenvolvedor** (canto superior direito).
 3. Clique em **Carregar sem compactação**.
 4. Selecione a pasta **`chrome-extension`** deste repositório (a pasta que contém `manifest.json`).
-5. A extensão **EVA Studio Bridge v2.0** aparecerá na lista. Mantenha-a habilitada.
+5. A extensão **EVA Studio Bridge v3.0** aparecerá na lista. Mantenha-a habilitada.
 
 Para usar: abra a **IDE** em `http://localhost:3000` e o **Gemini** em `https://gemini.google.com` (em outra aba). Na IDE, use **Executar Fase** (Groq) ou **+Gemini** (Executar Fase com Gemini) para enviar tópicos ao Gemini.
 
-### Robustez (v2.0.1)
+### Robustez (v3.0)
 - **Re-registro periódico** no content-gemini.js (a cada 45s) e ao voltar à aba do Gemini — evita tab ID obsoleto.
 - **Validação no background**: antes de usar o ID armazenado, verifica se a aba ainda existe e pertence ao Gemini; se não, busca via `chrome.tabs.query`.
 - **Retry** quando o envio falha: tenta novamente após rediscovery da aba.

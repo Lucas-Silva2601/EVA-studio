@@ -1,9 +1,9 @@
 /**
- * EVA Studio Bridge v2.0 - Background Service Worker (Manifest V3)
+ * EVA Studio Bridge v3.0 - Background Service Worker (Manifest V3)
  * Roteia mensagens entre a aba da IDE (localhost:3000) e a aba do Google Gemini (gemini.google.com).
  * Protocolo: EVA_PROMPT_SEND (IDE -> Extensão), EVA_CODE_RETURNED (Extensão -> IDE).
  */
-console.log("EVA Bridge v2.0 Service Worker Ativo");
+console.log("EVA Bridge v3.0 Service Worker Ativo");
 
 const STORAGE_KEYS = {
   IDE_TAB_ID: "eva_ide_tab_id",

@@ -1,5 +1,5 @@
 /**
- * EVA Studio Bridge v2.0 - Content Script (Google Gemini)
+ * EVA Studio Bridge v3.0 - Content Script (Google Gemini)
  * Executa em https://gemini.google.com/*
  *
  * FUNCIONALIDADE:
