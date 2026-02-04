@@ -60,6 +60,8 @@ O fluxo automático: o Analista lê o `checklist.md`, identifica a próxima tare
    ```
    Acesse **http://localhost:3000**. A File System Access API só funciona em contexto seguro (localhost ou HTTPS).
 
+   **Headers COOP/COEP**: o `next.config.js` define os headers `Cross-Origin-Opener-Policy: same-origin` e `Cross-Origin-Embedder-Policy: require-corp`. Eles são **obrigatórios** para a execução de código no browser (WebContainers/SharedArrayBuffer). Não remova esses headers ou a opção "Executar" do arquivo atual pode falhar.
+
 5. **Carregar a extensão Chrome** (necessário para o loop com o AI Studio):
    - Abra `chrome://extensions`.
    - Ative **Modo do desenvolvedor**.
@@ -117,6 +119,7 @@ EVA-studio/
 ## Segurança e boas práticas
 
 - **API Key Groq**: usada somente nas rotas de API do Next.js (`app/api/groq/route.ts`); nunca é enviada ao navegador.
+- **Vulnerabilidades (npm audit)**: exceções aceitas e ações recomendadas estão documentadas em `docs/01-audit-exceptions.md`.
 - **postMessage**: a IDE valida a origem das mensagens da extensão (`event.origin === window.location.origin`).
 - **Dados da extensão**: caminhos de arquivo e conteúdo são sanitizados antes de escrever em disco (evita path traversal e arquivos excessivamente grandes). Ver `lib/sanitize.ts`.
 - **Extensão**: permissões limitadas a `tabs`, `scripting`, `storage` e hosts da IDE e do AI Studio. Ver `chrome-extension/README.md`.

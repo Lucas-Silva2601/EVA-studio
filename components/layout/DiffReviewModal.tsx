@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useState, useEffect, useRef } from "react";
 import { Check, X, Edit3 } from "lucide-react";
 import { useIdeState } from "@/hooks/useIdeState";
 
@@ -27,6 +27,23 @@ export function DiffReviewModal() {
     setEditingPath(null);
   }, [rejectDiffReview]);
 
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        handleReject();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [handleReject]);
+
+  useEffect(() => {
+    dialogRef.current?.focus();
+  }, [pendingDiffReview?.files.length]);
+
   if (!pendingDiffReview || pendingDiffReview.files.length === 0) return null;
 
   const { files } = pendingDiffReview;
@@ -40,7 +57,9 @@ export function DiffReviewModal() {
       aria-labelledby="diff-review-title"
     >
       <div
-        className="flex flex-col w-full max-w-4xl max-h-[85vh] rounded-lg bg-vscode-sidebar border border-vscode-border shadow-xl overflow-hidden"
+        ref={dialogRef}
+        tabIndex={-1}
+        className="flex flex-col w-full max-w-4xl max-h-[85vh] rounded-lg bg-vscode-sidebar border border-vscode-border shadow-xl overflow-hidden outline-none focus:outline-none focus:ring-2 focus:ring-vscode-accent focus:ring-inset"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="shrink-0 px-4 py-3 border-b border-vscode-border bg-vscode-titlebar/80">
@@ -49,7 +68,7 @@ export function DiffReviewModal() {
           </h2>
         </div>
 
-        <div className="flex-1 overflow-auto min-h-0 p-3 space-y-3">
+        <div className="flex-1 overflow-auto min-h-0 p-3 space-y-3 scrollbar-thin">
           {files.map((file) => {
             const isNewFile = file.beforeContent === null;
             const isEditing = editingPath === file.filePath;

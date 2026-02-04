@@ -12,7 +12,7 @@ Documentação de melhorias do projeto EVA Studio, organizada em fases com check
 
 | Fase | Arquivo | Foco |
 |------|---------|------|
-| 1 | [01-fase-fundacao-e-limpeza.md](./01-fase-fundacao-e-limpeza.md) | Dependências, configuração, pastas/arquivos inúteis, documentação |
+| 1 | [01-fase-fundacao-e-limpeza.md](./01-fase-fundacao-e-limpeza.md) | Dependências, configuração, pastas/arquivos inúteis, documentação • [Exceções npm audit](./01-audit-exceptions.md) |
 | 2 | [02-fase-arquitetura.md](./02-fase-arquitetura.md) | Estrutura do projeto, App Router, separação de responsabilidades, tipos |
 | 3 | [03-fase-design.md](./03-fase-design.md) | UI/UX, acessibilidade, temas, componentes visuais |
 | 4 | [04-fase-funcionalidade.md](./04-fase-funcionalidade.md) | Features, API, extensão Chrome, fluxos de uso |
@@ -24,6 +24,10 @@ Documentação de melhorias do projeto EVA Studio, organizada em fases com check
 2. Siga os checklists na ordem sugerida (cima → baixo).
 3. Marque com `[x]` os itens concluídos.
 4. Use o `checklist.md` na raiz do repositório (se existir) para acompanhar entregas por sprint.
+
+## Convenções do projeto
+
+- **Rotas**: o projeto usa apenas **App Router** (`app/`). Não existe pasta `pages/`; não criar para evitar duplicidade de rotas.
 
 ## Referências (Context7)
 

@@ -1,11 +1,17 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useRef, useEffect, useState } from "react";
 import { FileTree } from "@/components/file-explorer/FileTree";
 import { useResize } from "@/hooks/useResize";
 import { useIdeState } from "@/hooks/useIdeState";
-import { ArchitectureMapView } from "@/components/layout/ArchitectureMapView";
 import { GitBranch } from "lucide-react";
+
+/** Mermaid é carregado só no client (ssr: false) para evitar resolução no servidor. */
+const ArchitectureMapView = dynamic(
+  () => import("@/components/layout/ArchitectureMapView").then((m) => ({ default: m.ArchitectureMapView })),
+  { ssr: false }
+);
 
 const SIDEBAR_MIN = 140;
 const SIDEBAR_MAX = 400;

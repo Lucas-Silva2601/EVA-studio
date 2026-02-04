@@ -39,10 +39,10 @@ export function BottomPanel() {
   }, [outputMessages]);
 
   const typeStyles = {
-    info: "text-gray-300",
-    success: "text-green-400",
-    warning: "text-yellow-400",
-    error: "text-red-400",
+    info: "text-vscode-msg-info",
+    success: "text-vscode-msg-success",
+    warning: "text-vscode-msg-warning",
+    error: "text-vscode-msg-error",
   };
 
   const LOOP_STATUS_LABELS: Record<string, string> = {

@@ -6,41 +6,41 @@ Checklist de ações para melhorar a estrutura do projeto, alinhada às melhores
 
 ## 2.1 Estrutura de pastas (App Router)
 
-- [ ] **Layout raiz**: `app/layout.tsx` define `<html>` e `<body>`; está correto. Manter `metadata` e `lang="pt-BR"`.
-- [ ] **Página principal**: `app/page.tsx` é Client Component (`"use client"`) por usar estado e context; está adequado. Evitar colocar lógica pesada direto na página; manter em hooks e componentes.
-- [ ] **Rotas de API**: única rota é `app/api/groq/route.ts`. Manter rotas sob `app/api/`; não misturar com páginas. Considerar subpastas por domínio se surgirem mais endpoints (ex.: `app/api/groq/`, `app/api/health/`).
-- [ ] **Evitar pasta `pages/`**: não criar `pages/`; o projeto usa apenas App Router. Documentar isso em README ou em `docs/00-INDICE.md`.
+- [x] **Layout raiz**: `app/layout.tsx` define `<html>` e `<body>`; está correto. Manter `metadata` e `lang="pt-BR"`.
+- [x] **Página principal**: `app/page.tsx` é Client Component (`"use client"`) por usar estado e context; está adequado. Evitar colocar lógica pesada direto na página; manter em hooks e componentes.
+- [x] **Rotas de API**: única rota é `app/api/groq/route.ts`. Manter rotas sob `app/api/`; não misturar com páginas. Considerar subpastas por domínio se surgirem mais endpoints (ex.: `app/api/groq/`, `app/api/health/`).
+- [x] **Evitar pasta `pages/`**: não criar `pages/`; o projeto usa apenas App Router. Documentar isso em README ou em `docs/00-INDICE.md`.
 
 ---
 
 ## 2.2 Server vs Client Components
 
-- [ ] **Identificar componentes que precisam de "use client"**: apenas onde há estado, eventos, `useEffect`, browser APIs (File System Access, IndexedDB, postMessage). Ex.: `page.tsx`, `useIdeState`, Sidebar, ChatPanel, EditorArea.
-- [ ] **Manter Server Components onde possível**: `app/layout.tsx` pode permanecer Server Component (não usa hooks nem browser APIs). Componentes que só exibem dados ou layout estático podem ser Server Components se não dependerem de contexto da IDE.
-- [ ] **Lazy loading**: componentes pesados (Monaco, Mermaid) já usam `import()` dinâmico. Para Mermaid, considerar `next/dynamic` com `ssr: false` no componente que renderiza o diagrama, para evitar resolução de módulo no servidor (ver documentação Next.js sobre dynamic import client-only).
+- [x] **Identificar componentes que precisam de "use client"**: apenas onde há estado, eventos, `useEffect`, browser APIs (File System Access, IndexedDB, postMessage). Ex.: `page.tsx`, `useIdeState`, Sidebar, ChatPanel, EditorArea.
+- [x] **Manter Server Components onde possível**: `app/layout.tsx` pode permanecer Server Component (não usa hooks nem browser APIs). Componentes que só exibem dados ou layout estático podem ser Server Components se não dependerem de contexto da IDE.
+- [x] **Lazy loading**: componentes pesados (Monaco, Mermaid) já usam `import()` dinâmico. Para Mermaid, considerar `next/dynamic` com `ssr: false` no componente que renderiza o diagrama, para evitar resolução de módulo no servidor (ver documentação Next.js sobre dynamic import client-only).
 
 ---
 
 ## 2.3 Organização de código
 
-- [ ] **`lib/`**: agrupa fileSystem, groq, runtime, sanitize, messaging, indexedDB, etc. Manter; são utilitários e serviços. Evitar arquivos gigantes; se um módulo crescer muito, dividir por domínio (ex.: `lib/groq/analyze.ts`, `lib/groq/chat.ts`).
-- [ ] **`hooks/`**: `useIdeState.tsx` é grande (muitas responsabilidades). Considerar extrair sub-hooks ou funções para `lib/` (ex.: lógica de checklist, lógica de diff, lógica de execução) para facilitar testes e leitura.
-- [ ] **`types/`**: tipos globais em `types/index.ts` e `types/global.d.ts`. Manter tipos compartilhados aqui; evitar duplicar interfaces entre `lib/` e componentes.
-- [ ] **`components/`**: subpastas `layout/`, `editor/`, `file-explorer/` estão coerentes. Manter convenção: um componente por arquivo, nomes em PascalCase.
+- [x] **`lib/`**: agrupa fileSystem, groq, runtime, sanitize, messaging, indexedDB, etc. Manter; são utilitários e serviços. Evitar arquivos gigantes; se um módulo crescer muito, dividir por domínio (ex.: `lib/groq/analyze.ts`, `lib/groq/chat.ts`).
+- [x] **`hooks/`**: `useIdeState.tsx` é grande (muitas responsabilidades). Considerar extrair sub-hooks ou funções para `lib/` (ex.: lógica de checklist, lógica de diff, lógica de execução) para facilitar testes e leitura.
+- [x] **`types/`**: tipos globais em `types/index.ts` e `types/global.d.ts`. Manter tipos compartilhados aqui; evitar duplicar interfaces entre `lib/` e componentes.
+- [x] **`components/`**: subpastas `layout/`, `editor/`, `file-explorer/` estão coerentes. Manter convenção: um componente por arquivo, nomes em PascalCase.
 
 ---
 
 ## 2.4 API e ambiente
 
-- [ ] **Variáveis de ambiente**: Next.js carrega `.env.local` automaticamente; usar apenas no servidor (rotas API). Não expor `GROQ_API_KEY` com `NEXT_PUBLIC_`. Já está correto em `app/api/groq/route.ts`.
-- [ ] **Route Handlers**: usar `POST` para ações do Analista (analyze, chat, validate, etc.); o cliente já envia `action` no body. Manter um único endpoint `/api/groq` com dispatch por `action` ou considerar rotas separadas no futuro (ex.: `/api/groq/analyze`, `/api/groq/chat`) se a rota atual ficar difícil de manter.
+- [x] **Variáveis de ambiente**: Next.js carrega `.env.local` automaticamente; usar apenas no servidor (rotas API). Não expor `GROQ_API_KEY` com `NEXT_PUBLIC_`. Já está correto em `app/api/groq/route.ts`.
+- [x] **Route Handlers**: usar `POST` para ações do Analista (analyze, chat, validate, etc.); o cliente já envia `action` no body. Manter um único endpoint `/api/groq` com dispatch por `action` ou considerar rotas separadas no futuro (ex.: `/api/groq/analyze`, `/api/groq/chat`) se a rota atual ficar difícil de manter.
 
 ---
 
 ## 2.5 Tipos e contratos
 
-- [ ] **Tipos da extensão**: `lib/messaging.ts` define payloads (CodeResponsePayload, etc.). Manter contratos documentados (comentários ou tipo compartilhado) para a extensão Chrome; evita quebra ao alterar formato.
-- [ ] **Tipos Groq**: resultados de análise e validação (`ChecklistAnalysisResult`, `ValidationResult`) estão em `types/index.ts`. Manter sincronizados com o JSON retornado pela API e com o parsing em `lib/groq.ts`.
+- [x] **Tipos da extensão**: `lib/messaging.ts` define payloads (CodeResponsePayload, etc.). Manter contratos documentados (comentários ou tipo compartilhado) para a extensão Chrome; evita quebra ao alterar formato.
+- [x] **Tipos Groq**: resultados de análise e validação (`ChecklistAnalysisResult`, `ValidationResult`) estão em `types/index.ts`. Manter sincronizados com o JSON retornado pela API e com o parsing em `lib/groq.ts`.
 
 ---
 
@@ -55,3 +55,12 @@ Checklist de ações para melhorar a estrutura do projeto, alinhada às melhores
 ---
 
 *Fase 2 concluída quando a estrutura estiver alinhada aos itens acima e não houver mistura desnecessária de responsabilidades.*
+
+---
+
+**Status**: Fase 2 implementada (fevereiro 2025).
+
+**Implementações realizadas**:
+- **Sidebar**: `ArchitectureMapView` passou a ser carregado com `next/dynamic(..., { ssr: false })` para evitar resolução do módulo Mermaid no servidor.
+- **docs/00-INDICE.md**: adicionada convenção "O projeto usa apenas App Router (`app/`); não existe pasta `pages/`".
+- **useIdeState**: revisado; a extração de sub-hooks ou funções para `lib/` fica como recomendação para iteração futura (refatoração maior).

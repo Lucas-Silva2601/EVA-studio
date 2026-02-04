@@ -69,6 +69,23 @@ export function ArchitectureMapView({ fileTree, onClose }: ArchitectureMapViewPr
       });
   }, [mermaidCode, error]);
 
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
+  useEffect(() => {
+    dialogRef.current?.focus();
+  }, []);
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
@@ -77,7 +94,9 @@ export function ArchitectureMapView({ fileTree, onClose }: ArchitectureMapViewPr
       aria-labelledby="architecture-map-title"
     >
       <div
-        className="flex flex-col w-full max-w-4xl max-h-[85vh] rounded-lg bg-vscode-sidebar border border-vscode-border shadow-xl overflow-hidden"
+        ref={dialogRef}
+        tabIndex={-1}
+        className="flex flex-col w-full max-w-4xl max-h-[85vh] rounded-lg bg-vscode-sidebar border border-vscode-border shadow-xl overflow-hidden outline-none focus:outline-none focus:ring-2 focus:ring-vscode-accent focus:ring-inset"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-vscode-border bg-vscode-titlebar/80">
@@ -93,7 +112,7 @@ export function ArchitectureMapView({ fileTree, onClose }: ArchitectureMapViewPr
             <X className="w-5 h-5" />
           </button>
         </div>
-        <div className="flex-1 overflow-auto min-h-0 p-4 bg-vscode-bg/80">
+        <div className="flex-1 overflow-auto min-h-0 p-4 bg-vscode-bg/80 scrollbar-thin">
           {loading && (
             <div className="flex items-center gap-2 text-gray-400">
               <Loader2 className="w-5 h-5 animate-spin" aria-hidden />
