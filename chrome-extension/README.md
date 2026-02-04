@@ -12,6 +12,12 @@ Ponte de comunicação entre a **IDE EVA Studio** (localhost:3000) e o **Google 
 
 Para usar: abra a **IDE** em `http://localhost:3000` e o **Gemini** em `https://gemini.google.com` (em outra aba). Na IDE, use **Executar Fase** (Groq) ou **+Gemini** (Executar Fase com Gemini) para enviar tópicos ao Gemini.
 
+### Robustez (v2.0.1)
+- **Re-registro periódico** no content-gemini.js (a cada 45s) e ao voltar à aba do Gemini — evita tab ID obsoleto.
+- **Validação no background**: antes de usar o ID armazenado, verifica se a aba ainda existe e pertence ao Gemini; se não, busca via `chrome.tabs.query`.
+- **Retry** quando o envio falha: tenta novamente após rediscovery da aba.
+- **Suporte a www**: extensão também funciona em `https://www.gemini.google.com`.
+
 ## Permissões
 
 - **tabs**: rotear mensagens entre a aba da IDE e a aba do Gemini

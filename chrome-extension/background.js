@@ -19,6 +19,8 @@ function setIdeTabId(tabId) {
   return chrome.storage.local.set({ [STORAGE_KEYS.IDE_TAB_ID]: tabId });
 }
 
+const GEMINI_URL_PATTERNS = ["https://gemini.google.com/*", "https://www.gemini.google.com/*"];
+
 async function getGeminiTabId() {
   const out = await chrome.storage.local.get(STORAGE_KEYS.GEMINI_TAB_ID);
   return out[STORAGE_KEYS.GEMINI_TAB_ID];
@@ -26,6 +28,28 @@ async function getGeminiTabId() {
 
 function setGeminiTabId(tabId) {
   return chrome.storage.local.set({ [STORAGE_KEYS.GEMINI_TAB_ID]: tabId });
+}
+
+/**
+ * Encontra uma aba válida do Gemini: valida o ID armazenado ou busca via query.
+ * Mais robusto contra storage limpo, extensão reiniciada ou aba fechada/reaberta.
+ */
+async function findValidGeminiTab() {
+  const stored = await getGeminiTabId();
+  if (stored) {
+    try {
+      const tab = await chrome.tabs.get(stored);
+      if (tab?.url && (tab.url.includes("gemini.google.com"))) return tab.id;
+    } catch (_) {}
+  }
+  const tabs = await chrome.tabs.query({ url: GEMINI_URL_PATTERNS });
+  if (tabs.length > 0) {
+    const tabId = tabs[0].id;
+    await setGeminiTabId(tabId);
+    console.log("[EVA Bridge] Aba do Gemini descoberta via query:", tabId);
+    return tabId;
+  }
+  return null;
 }
 
 function sendCodeReturnedToIde(payload) {
@@ -48,33 +72,40 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (type === "EVA_PROMPT_SEND") {
     console.log("[EVA Bridge] EVA_PROMPT_SEND recebido, procurando aba do Gemini...");
-    getGeminiTabId().then(async (geminiTabId) => {
-      let tabIdToUse = geminiTabId;
-      if (!tabIdToUse) {
-        const tabs = await chrome.tabs.query({ url: "*://gemini.google.com/*" });
-        if (tabs.length > 0) {
-          tabIdToUse = tabs[0].id;
-          await setGeminiTabId(tabIdToUse);
-          console.log("[EVA Bridge] Aba do Gemini descoberta e registrada:", tabIdToUse);
-        }
-      }
+    (async () => {
+      const tabIdToUse = await findValidGeminiTab();
       if (!tabIdToUse) {
         console.warn("[EVA Bridge] Nenhuma aba do Gemini encontrada.");
         sendCodeReturnedToIde({ error: "Abra o Google Gemini (gemini.google.com) em uma aba primeiro." });
         sendResponse({ ok: false });
         return;
       }
-      chrome.tabs.sendMessage(tabIdToUse, { type: "EVA_PROMPT_INJECT", payload: { prompt: payload?.prompt ?? "" } })
-        .then(() => {
-          console.log("[EVA Bridge] EVA_PROMPT_INJECT enviado ao Gemini.");
-          sendResponse({ ok: true });
-        })
-        .catch((err) => {
-          console.warn("[EVA Bridge] Falha ao enviar ao Gemini.", err?.message || err);
-          sendCodeReturnedToIde({ error: "Aba do Gemini fechada ou indisponível. Mantenha gemini.google.com aberto." });
+      const prompt = payload?.prompt ?? "";
+      const trySend = async (tabId) => {
+        return chrome.tabs.sendMessage(tabId, { type: "EVA_PROMPT_INJECT", payload: { prompt } });
+      };
+      try {
+        await trySend(tabIdToUse);
+        console.log("[EVA Bridge] EVA_PROMPT_INJECT enviado ao Gemini.");
+        sendResponse({ ok: true });
+      } catch (err) {
+        console.warn("[EVA Bridge] Falha ao enviar ao Gemini, tentando rediscovery.", err?.message || err);
+        const retryTabId = await findValidGeminiTab();
+        if (retryTabId && retryTabId !== tabIdToUse) {
+          try {
+            await trySend(retryTabId);
+            console.log("[EVA Bridge] EVA_PROMPT_INJECT enviado ao Gemini (retry).");
+            sendResponse({ ok: true });
+          } catch (retryErr) {
+            sendCodeReturnedToIde({ error: "Aba do Gemini fechada ou indisponível. Mantenha gemini.google.com aberto e recarregue a aba." });
+            sendResponse({ ok: false });
+          }
+        } else {
+          sendCodeReturnedToIde({ error: "Aba do Gemini fechada ou indisponível. Recarregue a aba do Gemini e tente novamente." });
           sendResponse({ ok: false });
-        });
-    });
+        }
+      }
+    })();
     return true;
   }
   return false;

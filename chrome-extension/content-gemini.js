@@ -20,8 +20,19 @@
     chrome.runtime.sendMessage({ source: SOURCE, type, payload }).catch(() => {});
   }
 
+  function registerTab() {
+    sendToBackground("REGISTER_GEMINI_TAB", {});
+  }
+
   console.log("[EVA-Gemini] Script injetado; registrando aba.");
-  sendToBackground("REGISTER_GEMINI_TAB", {});
+  registerTab();
+
+  /* Re-registro periódico e ao voltar à aba — evita tab ID obsoleto (storage limpo, extensão reiniciada). */
+  const REGISTER_INTERVAL_MS = 45000;
+  const registerInterval = setInterval(registerTab, REGISTER_INTERVAL_MS);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") registerTab();
+  });
 
   /**
    * Encontra a caixa de prompt do Gemini (textarea, contenteditable ou role="combobox").

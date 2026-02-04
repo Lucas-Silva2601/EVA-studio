@@ -30,7 +30,13 @@
     if (geminiTabId) {
       try {
         const tab = await chrome.tabs.get(geminiTabId);
-        geminiOk = !!tab && tab.url?.includes("gemini.google.com");
+        geminiOk = !!tab && tab.url && (tab.url.includes("gemini.google.com"));
+      } catch (_) {}
+    }
+    if (!geminiOk) {
+      try {
+        const tabs = await chrome.tabs.query({ url: ["https://gemini.google.com/*", "https://www.gemini.google.com/*"] });
+        geminiOk = tabs.length > 0;
       } catch (_) {}
     }
 

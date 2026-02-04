@@ -55,8 +55,14 @@
     console.warn("[CONTENT-IDE] Falha ao enviar EVA_EXTENSION_CONNECTED.", e);
   }
 
-  sendToBackground("REGISTER_IDE_TAB", {});
+  function registerIdeTab() {
+    sendToBackground("REGISTER_IDE_TAB", {});
+  }
+  registerIdeTab();
   console.log("[CONTENT-IDE] Aba da IDE registrada no background.");
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") registerIdeTab();
+  });
 
   window.addEventListener("message", (event) => {
     if (event.source !== window || !event.data) return;
