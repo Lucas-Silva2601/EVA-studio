@@ -151,27 +151,46 @@ body {
   transition: height 200ms ease-out;
 }
 
-/* Resize handles - estilo unificado e acessibilidade */
+/* Resize handles - estilo unificado, visíveis em ambos os temas e acessibilidade */
 .resize-handle-horizontal,
 .resize-handle-vertical {
   background-color: var(--ds-border);
   transition: background-color 150ms ease;
   user-select: none;
+  flex-shrink: 0;
 }
 
 .resize-handle-horizontal {
   cursor: col-resize;
   width: 8px;
+  min-width: 8px;
 }
 
 .resize-handle-vertical {
   cursor: row-resize;
-  height: 12px;
+  height: 20px;
+  min-height: 20px;
+}
+
+/* Tema claro: alça mais visível (cinza médio) */
+html:not(.dark) .resize-handle-horizontal,
+html:not(.dark) .resize-handle-vertical {
+  background-color: #8b949e;
+}
+
+html:not(.dark) .resize-handle-horizontal:hover,
+html:not(.dark) .resize-handle-vertical:hover {
+  background-color: var(--ds-accent);
 }
 
 .resize-handle-horizontal:hover,
 .resize-handle-vertical:hover {
   background-color: var(--ds-accent-neon);
+}
+
+html:not(.dark) .resize-handle-horizontal:hover,
+html:not(.dark) .resize-handle-vertical:hover {
+  background-color: var(--ds-accent);
 }
 
 .resize-handle-horizontal:focus,
@@ -180,10 +199,19 @@ body {
   outline-offset: -2px;
 }
 
+html:not(.dark) .resize-handle-horizontal:focus,
+html:not(.dark) .resize-handle-vertical:focus {
+  outline-color: var(--ds-accent);
+}
+
 .resize-handle-inner {
   background-color: rgba(255, 255, 255, 0.5);
   border-radius: 9999px;
   opacity: 0.7;
+}
+
+html:not(.dark) .resize-handle-inner {
+  background-color: rgba(255, 255, 255, 0.8);
 }
 
 .resize-handle-horizontal:hover .resize-handle-inner,

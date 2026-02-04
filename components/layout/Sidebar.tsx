@@ -47,34 +47,36 @@ export function Sidebar() {
   return (
     <div
       ref={sidebarRef}
-      className="flex shrink-0 flex-col h-full max-h-[calc(100vh-2.5rem)] bg-ds-surface-light dark:bg-ds-surface border-r border-ds-border-light dark:border-ds-border"
+      className="flex shrink-0 flex-row h-full max-h-[calc(100vh-2.5rem)] bg-ds-surface-light dark:bg-ds-surface border-r border-ds-border-light dark:border-ds-border"
       style={{ width: size }}
       role="complementary"
       aria-label="Explorador de arquivos"
     >
-      <div className="px-2 py-2 border-b border-ds-border-light dark:border-ds-border shrink-0 flex items-center justify-between gap-2">
-        <h2 className="panel-title">
-          Explorador
-        </h2>
-        <button
-          type="button"
-          onClick={() => setShowMap(true)}
-          className="flex items-center gap-1 rounded px-1.5 py-1 text-[10px] text-ds-text-secondary-light dark:text-ds-text-secondary hover:text-ds-text-primary-light dark:hover:text-ds-text-primary hover:bg-ds-surface-hover-light dark:hover:bg-ds-surface-hover focus:outline-none focus-visible:ring-1 focus-visible:ring-ds-accent-neon"
-          aria-label="Ver mapa do projeto (Mermaid)"
-          title="Ver mapa do projeto"
-        >
-          <GitBranch className="w-3.5 h-3.5" aria-hidden />
-          Mapa
-        </button>
+      <div className="flex flex-col flex-1 min-w-0 min-h-0">
+        <div className="px-2 py-2 border-b border-ds-border-light dark:border-ds-border shrink-0 flex items-center justify-between gap-2">
+          <h2 className="panel-title">
+            Explorador
+          </h2>
+          <button
+            type="button"
+            onClick={() => setShowMap(true)}
+            className="flex items-center gap-1 rounded px-1.5 py-1 text-[10px] text-ds-text-secondary-light dark:text-ds-text-secondary hover:text-ds-text-primary-light dark:hover:text-ds-text-primary hover:bg-ds-surface-hover-light dark:hover:bg-ds-surface-hover focus:outline-none focus-visible:ring-1 focus-visible:ring-ds-accent-neon"
+            aria-label="Ver mapa do projeto (Mermaid)"
+            title="Ver mapa do projeto"
+          >
+            <GitBranch className="w-3.5 h-3.5" aria-hidden />
+            Mapa
+          </button>
+        </div>
+        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden scrollbar-thin" style={{ scrollbarWidth: "thin" }}>
+          <FileTree />
+        </div>
+        {showMap && (
+          <ArchitectureMapView fileTree={fileTree} onClose={() => setShowMap(false)} />
+        )}
       </div>
-      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden scrollbar-thin" style={{ scrollbarWidth: "thin" }}>
-        <FileTree />
-      </div>
-      {showMap && (
-        <ArchitectureMapView fileTree={fileTree} onClose={() => setShowMap(false)} />
-      )}
       <div
-        className="resize-handle-horizontal shrink-0 flex-shrink-0 flex items-center justify-center"
+        className="resize-handle-horizontal shrink-0 flex-shrink-0 flex items-center justify-center self-stretch min-w-[8px] relative z-10"
         role="separator"
         aria-orientation="vertical"
         aria-valuenow={size}

@@ -218,6 +218,28 @@
     return map[(lang || "").toLowerCase()] || "";
   }
 
+  /** Mínimo de caracteres para considerar conteúdo como arquivo (evita comandos soltos). */
+  const MIN_FILE_CONTENT_LENGTH = 60;
+  /** Uma única linha com menos que isso é tratada como snippet/comando (a menos que tenha FILE:). */
+  const MIN_SINGLE_LINE_LENGTH = 100;
+  /** Padrão: linha que parece comando de shell/terminal (não é código de arquivo). */
+  const SINGLE_LINE_COMMAND_REGEX = /^(npm |yarn |pnpm |cd |echo |git |python |node |\.\/|npx |curl |wget |mkdir |cp |mv |cat |ls |chmod |exit |clear |deno |bun )\s*/i;
+
+  /**
+   * Retorna true se o conteúdo deve ser ignorado (comando solto, snippet de uma linha, etc.).
+   * Esses blocos não são enviados como arquivos para o projeto.
+   */
+  function isSnippetOrCommand(content) {
+    const trimmed = (content || "").trim();
+    if (trimmed.length < MIN_FILE_CONTENT_LENGTH) return true;
+    const lines = trimmed.split(/\r?\n/).filter(function (l) { return l.trim().length > 0; });
+    if (lines.length === 1) {
+      if (trimmed.length < MIN_SINGLE_LINE_LENGTH) return true;
+      if (SINGLE_LINE_COMMAND_REGEX.test(trimmed)) return true;
+    }
+    return false;
+  }
+
   /**
    * Converte blocos extraídos em files (name = path, content).
    * Prioridade: FILE: na primeira linha → FILE: em qualquer linha inicial → inferência do conteúdo → language class → file_N.ext (evita .txt genérico).
@@ -335,8 +357,11 @@
       if (blocks.length === 0) {
         sendToBackground("EVA_CODE_CAPTURED", { code: "", files: [] });
       } else {
-        const files = blocksToFiles(blocks);
-        if (files.length === 1) {
+        const allFiles = blocksToFiles(blocks);
+        const files = allFiles.filter(function (f) { return !isSnippetOrCommand(f.content); });
+        if (files.length === 0) {
+          sendToBackground("EVA_CODE_CAPTURED", { code: "", files: [] });
+        } else if (files.length === 1) {
           sendToBackground("EVA_CODE_CAPTURED", {
             code: files[0].content,
             filename: files[0].name,

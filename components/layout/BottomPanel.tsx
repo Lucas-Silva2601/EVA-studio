@@ -65,17 +65,27 @@ export function BottomPanel() {
       {/* Alça de redimensionamento no topo (borda entre editor e terminal) — arraste para mudar a altura */}
       {open && (
         <div
-          className="resize-handle-vertical shrink-0 flex-shrink-0 flex items-center justify-center"
+          className="resize-handle-vertical shrink-0 flex-shrink-0 flex items-center justify-center self-stretch min-h-[20px] relative z-10 select-none -mt-1 pt-1"
           role="separator"
           aria-orientation="horizontal"
           aria-valuenow={size}
           aria-label="Arraste para redimensionar o painel Output"
-          title="Arraste para redimensionar o painel Output"
+          title="Arraste para cima/baixo para redimensionar o painel Output"
           tabIndex={0}
-          onMouseDown={onMouseDown}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onMouseDown(e);
+          }}
           onKeyDown={(e) => {
-            if (e.key === "ArrowUp") setSize((s) => Math.max(PANEL_MIN, s - 10));
-            if (e.key === "ArrowDown") setSize((s) => Math.min(PANEL_MAX, s + 10));
+            if (e.key === "ArrowUp") {
+              e.preventDefault();
+              setSize((s) => Math.max(PANEL_MIN, s - 10));
+            }
+            if (e.key === "ArrowDown") {
+              e.preventDefault();
+              setSize((s) => Math.min(PANEL_MAX, s + 10));
+            }
           }}
         >
           <span className="resize-handle-inner h-0.5 w-12" aria-hidden />

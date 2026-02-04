@@ -99,6 +99,28 @@ export function inferFilenameFromContent(content: string): string | null {
   return null;
 }
 
+/** Mínimo de caracteres para considerar conteúdo como arquivo (evita comandos soltos). */
+const MIN_FILE_CONTENT_LENGTH = 60;
+/** Uma única linha com menos que isso é tratada como snippet/comando. */
+const MIN_SINGLE_LINE_LENGTH = 100;
+/** Padrão: linha que parece comando de shell/terminal (não é código de arquivo). */
+const SINGLE_LINE_COMMAND_REGEX = /^(npm |yarn |pnpm |cd |echo |git |python |node |\.\/|npx |curl |wget |mkdir |cp |mv |cat |ls |chmod |exit |clear |deno |bun )\s*/i;
+
+/**
+ * Retorna true se o conteúdo deve ser ignorado (comando solto, snippet de uma linha, etc.).
+ * Esses blocos não são salvos como arquivos no projeto.
+ */
+export function isSnippetOrCommand(content: string): boolean {
+  const trimmed = (content ?? "").trim();
+  if (trimmed.length < MIN_FILE_CONTENT_LENGTH) return true;
+  const lines = trimmed.split(/\r?\n/).filter((l) => l.trim().length > 0);
+  if (lines.length === 1) {
+    if (trimmed.length < MIN_SINGLE_LINE_LENGTH) return true;
+    if (SINGLE_LINE_COMMAND_REGEX.test(trimmed)) return true;
+  }
+  return false;
+}
+
 /**
  * Extrai o nome do arquivo da primeira linha do bloco (convenção do projeto).
  * Ex.: "// filename: App.js", "# filename: utils.py", "<!-- filename: index.html -->"
