@@ -689,7 +689,7 @@ export function ChatSidebar() {
               className={`rounded-md px-2 py-1.5 break-words border-l-2 ${
                 m.role === "user"
                   ? "bg-ds-accent-neon/20 border-ds-accent-neon text-ds-text-primary-light dark:text-ds-text-primary"
-                  : "bg-vscode-bg/80 text-ds-text-primary-light dark:text-ds-text-primary border-vscode-border"
+                  : "bg-ds-bg-secondary-light dark:bg-vscode-bg/80 text-ds-text-primary-light dark:text-ds-text-primary border-ds-border-light dark:border-vscode-border"
               }`}
             >
               <span className="text-[10px] font-medium text-ds-text-secondary-light dark:text-ds-text-secondary block mb-0.5">

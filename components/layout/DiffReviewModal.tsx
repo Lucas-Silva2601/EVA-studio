@@ -153,7 +153,7 @@ export function DiffReviewModal() {
           <button
             type="button"
             onClick={handleReject}
-            className="flex items-center gap-2 px-3 py-1.5 rounded text-sm bg-red-900/40 hover:bg-red-900/60 text-red-300 focus:outline-none focus-visible:ring-1 focus-visible:ring-red-500"
+            className="flex items-center gap-2 px-3 py-1.5 rounded text-sm bg-red-100 hover:bg-red-200 text-red-700 hover:text-red-800 dark:bg-red-900/40 dark:hover:bg-red-900/60 dark:text-red-300 focus:outline-none focus-visible:ring-1 focus-visible:ring-red-500"
             aria-label="Rejeitar todas as alterações"
           >
             <X className="w-4 h-4" aria-hidden />
@@ -162,7 +162,7 @@ export function DiffReviewModal() {
           <button
             type="button"
             onClick={handleAccept}
-            className="flex items-center gap-2 px-3 py-1.5 rounded text-sm bg-green-900/40 hover:bg-green-900/60 text-green-300 focus:outline-none focus-visible:ring-1 focus-visible:ring-green-500"
+            className="flex items-center gap-2 px-3 py-1.5 rounded text-sm bg-green-100 hover:bg-green-200 text-green-700 hover:text-green-800 dark:bg-green-900/40 dark:hover:bg-green-900/60 dark:text-green-300 focus:outline-none focus-visible:ring-1 focus-visible:ring-green-500"
             aria-label="Aceitar e gravar todos no disco"
           >
             <Check className="w-4 h-4" aria-hidden />

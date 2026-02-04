@@ -58,7 +58,7 @@ export function ChatCodeBlock({
   const multiFile = onImplementAll != null && codeBlocksWithFile.length >= 2;
 
   return (
-    <div className={`whitespace-pre-wrap break-words text-ds-text-primary ${className}`}>
+    <div className={`whitespace-pre-wrap break-words text-ds-text-primary-light dark:text-ds-text-primary ${className}`}>
       {segments.map((seg, i) => {
         if (seg.type === "text") {
           return <span key={i}>{seg.value}</span>;
