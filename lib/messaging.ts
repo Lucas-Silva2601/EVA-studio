@@ -1,4 +1,4 @@
-import { blocksToFiles, parseCodeBlocksFromMarkdown, parseSingleFileWithFilePrefix, extractFilePathStrict, extractFilePathFromFullText, stripFilenameComment, inferFilenameFromContent } from "@/lib/markdownCodeParser";
+import { blocksToFiles, parseCodeBlocksFromMarkdown, parseSingleFileWithFilePrefix, extractFilePathStrict, extractFilePathFromFullText, stripFilenameComment, inferFilenameFromContent, isSnippetOrCommand } from "@/lib/markdownCodeParser";
 
 /**
  * Protocolo de comunicação IDE ↔ Extensão Chrome (EVA Studio Bridge).
@@ -71,6 +71,7 @@ export function onExtensionMessage(
       handler("CODE_RESPONSE", { _connected: true } as ExtensionMessagePayload);
       return;
     }
+    // Validação de origem: ignorar mensagens de outros origins (segurança).
     if (typeof window !== "undefined" && event.origin !== window.location.origin) return;
     if (data?.type !== "EVA_STUDIO_TO_PAGE" || !data.payload) return;
 
@@ -179,34 +180,59 @@ function extractFileNameFromGeminiResponse(rawCode: string): string | null {
   return path ?? null;
 }
 
+/** Detecta se o nome é genérico (file_0.txt, file_1.txt etc.) — indica que a extensão não conseguiu inferir. */
+function isGenericFilename(name: string): boolean {
+  return /^file_\d+\.txt$/i.test(name?.trim() ?? "");
+}
+
 /**
  * Normaliza o payload da extensão para lista de arquivos.
  * Regra: FILE: em todo o texto ou em blocos markdown → usa esse nome. Se não encontrar, pausa com FILENAME_ASK_GROQ (pedir nome antes de salvar).
+ * Fallback: quando extensão envia file_N.txt, tenta inferir nome correto do conteúdo.
  */
+/** Filtra arquivos que são apenas comando/snippet (não devem ser salvos no projeto). */
+function filterSnippetOrCommand(files: Array<{ name: string; content: string }>): Array<{ name: string; content: string }> {
+  return files.filter((f) => !isSnippetOrCommand(f.content));
+}
+
 function normalizeToFiles(p: CodeResponsePayload): Array<{ name: string; content: string }> {
-  if (p.files && p.files.length > 0) return p.files;
-  if (p.blocks && p.blocks.length > 0) return blocksToFiles(p.blocks);
+  if (p.files && p.files.length > 0) {
+    const mapped = p.files.map((f) => {
+      if (isGenericFilename(f.name)) {
+        const inferred = inferFilenameFromContent(f.content);
+        if (inferred) return { name: inferred, content: stripFilenameComment(f.content) };
+      }
+      return f;
+    });
+    return filterSnippetOrCommand(mapped);
+  }
+  if (p.blocks && p.blocks.length > 0) return filterSnippetOrCommand(blocksToFiles(p.blocks));
   const rawCode = (p.code ?? "").trim();
   if (!rawCode) return [];
   const singleWithPrefix = parseSingleFileWithFilePrefix(rawCode);
-  if (singleWithPrefix) return [singleWithPrefix];
+  if (singleWithPrefix) {
+    if (isSnippetOrCommand(singleWithPrefix.content)) return [];
+    return [singleWithPrefix];
+  }
   const fromMarkdown = parseCodeBlocksFromMarkdown(rawCode);
+  const filteredMarkdown = filterSnippetOrCommand(fromMarkdown);
   const fileFromText = extractFileNameFromGeminiResponse(rawCode);
-  if (fromMarkdown.length > 0) {
-    if (fileFromText && fromMarkdown.length === 1) {
-      const content = stripFilenameComment(fromMarkdown[0].content);
+  if (filteredMarkdown.length > 0) {
+    if (fileFromText && filteredMarkdown.length === 1) {
+      const content = stripFilenameComment(filteredMarkdown[0].content);
       return [{ name: fileFromText, content }];
     }
     const hasFilePrefix = /FILE\s*:/i.test(rawCode);
-    if (hasFilePrefix && fromMarkdown.length === 1) {
+    if (hasFilePrefix && filteredMarkdown.length === 1) {
       const strictPath = extractFilePathStrict(rawCode);
       if (strictPath) {
-        const content = stripFilenameComment(fromMarkdown[0].content);
+        const content = stripFilenameComment(filteredMarkdown[0].content);
         return [{ name: strictPath, content }];
       }
     }
-    return fromMarkdown;
+    return filteredMarkdown;
   }
+  if (isSnippetOrCommand(rawCode)) return [];
   const strictPath = fileFromText ?? extractFilePathStrict(rawCode);
   const inferred = inferFilenameFromContent(rawCode);
   const name = strictPath ?? p.filename?.trim() ?? inferred ?? FILENAME_ASK_GROQ;

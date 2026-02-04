@@ -35,14 +35,16 @@ export function BottomPanel() {
   }, [onMouseMove, onMouseUp]);
 
   useEffect(() => {
-    if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
+    if (listRef.current) {
+      listRef.current.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" });
+    }
   }, [outputMessages]);
 
   const typeStyles = {
-    info: "text-gray-300",
-    success: "text-green-400",
-    warning: "text-yellow-400",
-    error: "text-red-400",
+    info: "text-[var(--ds-text-info)]",
+    success: "text-[var(--ds-text-success)]",
+    warning: "text-[var(--ds-text-warning)]",
+    error: "text-[var(--ds-text-error)]",
   };
 
   const LOOP_STATUS_LABELS: Record<string, string> = {
@@ -55,7 +57,7 @@ export function BottomPanel() {
 
   return (
     <div
-      className="flex flex-col shrink-0 bg-vscode-panel border-t border-vscode-border"
+      className="flex flex-col shrink-0 bg-ds-bg-secondary-light dark:bg-ds-bg-secondary border-t border-ds-border-light dark:border-ds-border transition-panel"
       style={{ height: open ? size : 40 }}
       role="region"
       aria-label="Painel de saída"
@@ -63,25 +65,35 @@ export function BottomPanel() {
       {/* Alça de redimensionamento no topo (borda entre editor e terminal) — arraste para mudar a altura */}
       {open && (
         <div
-          className="h-3 shrink-0 bg-zinc-600 hover:bg-blue-500 transition-colors cursor-row-resize flex-shrink-0 flex items-center justify-center group"
+          className="resize-handle-vertical shrink-0 flex-shrink-0 flex items-center justify-center self-stretch min-h-[20px] relative z-10 select-none -mt-1 pt-1"
           role="separator"
           aria-orientation="horizontal"
           aria-valuenow={size}
           aria-label="Arraste para redimensionar o painel Output"
-          title="Arraste para redimensionar o painel Output"
+          title="Arraste para cima/baixo para redimensionar o painel Output"
           tabIndex={0}
-          onMouseDown={onMouseDown}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onMouseDown(e);
+          }}
           onKeyDown={(e) => {
-            if (e.key === "ArrowUp") setSize((s) => Math.max(PANEL_MIN, s - 10));
-            if (e.key === "ArrowDown") setSize((s) => Math.min(PANEL_MAX, s + 10));
+            if (e.key === "ArrowUp") {
+              e.preventDefault();
+              setSize((s) => Math.max(PANEL_MIN, s - 10));
+            }
+            if (e.key === "ArrowDown") {
+              e.preventDefault();
+              setSize((s) => Math.min(PANEL_MAX, s + 10));
+            }
           }}
         >
-          <span className="h-0.5 w-12 bg-zinc-500 group-hover:bg-white/80 rounded-full opacity-70" aria-hidden />
+          <span className="resize-handle-inner h-0.5 w-12" aria-hidden />
         </div>
       )}
       {/* Cabeçalho do painel */}
       <div
-        className="h-10 flex items-center justify-between px-3 border-b border-vscode-border bg-vscode-sidebar/80 shrink-0"
+        className="h-10 flex items-center justify-between px-3 border-b border-ds-border-light dark:border-ds-border bg-ds-surface-light/80 dark:bg-ds-surface/80 shrink-0"
         role="button"
         tabIndex={0}
         onClick={() => setOpen((o) => !o)}
@@ -95,16 +107,16 @@ export function BottomPanel() {
         aria-controls="output-content"
       >
         <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+          <span className="panel-title">
             Output
           </span>
-          <span className="text-xs text-gray-500" aria-live="polite" title={`Estado: ${statusLabel}`}>
+          <span className="text-xs text-ds-text-muted-light dark:text-ds-text-muted" aria-live="polite" title={`Estado: ${statusLabel}`}>
             • {statusLabel}
           </span>
           {open ? (
-            <ChevronDown className="w-4 h-4 text-gray-500" aria-hidden />
+            <ChevronDown className="w-4 h-4 text-ds-text-muted-light dark:text-ds-text-muted" aria-hidden />
           ) : (
-            <ChevronUp className="w-4 h-4 text-gray-500" aria-hidden />
+            <ChevronUp className="w-4 h-4 text-ds-text-muted-light dark:text-ds-text-muted" aria-hidden />
           )}
         </div>
         {open && (
@@ -114,10 +126,10 @@ export function BottomPanel() {
               e.stopPropagation();
               clearOutput();
             }}
-            className="p-1.5 rounded hover:bg-vscode-sidebar-hover focus:outline-none focus:ring-1 focus:ring-vscode-accent"
+            className="p-1.5 rounded hover:bg-ds-surface-hover-light dark:hover:bg-ds-surface-hover focus:outline-none focus-visible:ring-1 focus-visible:ring-ds-accent-neon"
             aria-label="Limpar saída"
           >
-            <Trash2 className="w-4 h-4 text-gray-500" aria-hidden />
+            <Trash2 className="w-4 h-4 text-ds-text-muted-light dark:text-ds-text-muted" aria-hidden />
           </button>
         )}
       </div>
@@ -127,11 +139,11 @@ export function BottomPanel() {
         <div
           id="output-content"
           ref={listRef}
-          className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden scrollbar-thin px-3 py-2 font-mono text-sm"
+          className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden scrollbar-thin px-3 py-2 font-mono text-sm [scroll-behavior:smooth]"
           style={{ scrollbarWidth: "thin" }}
         >
           {outputMessages.length === 0 ? (
-            <p className="text-gray-500 text-sm">
+            <p className="text-ds-text-muted-light dark:text-ds-text-muted text-sm">
               Mensagens do fluxo de automação aparecerão aqui (ex.: &quot;Analisando checklist...&quot;, &quot;Aguardando resposta do Gemini...&quot;).
             </p>
           ) : (
@@ -141,7 +153,7 @@ export function BottomPanel() {
                 className={`py-0.5 ${typeStyles[msg.type]}`}
                 role="log"
               >
-                <span className="text-gray-500 select-none">
+                <span className="text-ds-text-muted-light dark:text-ds-text-muted select-none">
                   [{msg.timestamp.toLocaleTimeString("pt-BR")}]
                 </span>{" "}
                 {msg.text}

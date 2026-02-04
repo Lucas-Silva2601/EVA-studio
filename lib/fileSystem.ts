@@ -1,6 +1,9 @@
 /**
  * Lógica de arquivos via File System Access API (Fase 2).
  * Funciona apenas em contexto seguro (HTTPS ou localhost).
+ *
+ * Erros (permissão negada, arquivo inexistente, caminho inválido) são lançados;
+ * o chamador deve tratá-los e exibir ao usuário (ex.: addOutputMessage no Output).
  */
 
 import type { FileNode } from "@/types";

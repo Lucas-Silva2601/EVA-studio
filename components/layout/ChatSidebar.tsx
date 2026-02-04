@@ -641,21 +641,21 @@ export function ChatSidebar() {
   }, [directoryHandle, readChecklist]);
 
   return (
-    <div className="flex flex-col h-full min-h-0 bg-vscode-sidebar overflow-hidden">
-      <div className="flex items-center justify-between gap-2 px-2 py-2 border-b border-vscode-border shrink-0">
-        <h2 className="text-xs font-semibold text-gray-600 uppercase tracking-wider flex items-center gap-1.5">
+    <div className="flex flex-col h-full min-h-0 bg-ds-surface-light dark:bg-ds-surface overflow-hidden">
+      <div className="flex items-center justify-between gap-2 px-2 py-2 border-b border-ds-border-light dark:border-ds-border shrink-0">
+        <h2 className="panel-title flex items-center gap-1.5">
           <MessageCircle className="w-3.5 h-3.5" aria-hidden />
           Chat EVA
         </h2>
         <span
-          className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${extensionOnline ? "text-green-400 bg-green-900/30" : "text-red-400 bg-red-900/30"}`}
+          className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${extensionOnline ? "text-green-700 bg-green-100 dark:text-green-400 dark:bg-green-900/30" : "text-red-700 bg-red-100 dark:text-red-400 dark:bg-red-900/30"}`}
           title={extensionOnline ? "Extensão EVA Bridge conectada (Gemini)" : "Extensão offline. Instale a EVA Bridge e abra gemini.google.com."}
         >
           {extensionOnline ? "Online" : "Offline"}
         </span>
         {activeFile && (
           <span
-            className="text-[10px] text-gray-600 truncate max-w-[100px]"
+            className="text-[10px] text-ds-text-secondary-light dark:text-ds-text-secondary truncate max-w-[100px]"
             title={activeFile.path}
           >
             {activeFile.name}
@@ -665,14 +665,14 @@ export function ChatSidebar() {
 
       <div
         ref={scrollRef}
-        className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-2 space-y-2 text-sm scrollbar-thin"
+        className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-2 space-y-2 text-sm scrollbar-thin [scroll-behavior:smooth]"
         role="log"
         aria-live="polite"
         aria-label="Histórico do chat"
         style={{ scrollbarWidth: "thin" }}
       >
         {messages.length === 0 && (
-          <p className="text-zinc-50 text-xs py-2">
+          <p className="text-ds-text-primary-light dark:text-ds-text-primary text-xs py-2">
             Converse com o Analista (Groq). Projeto: <strong>{projectId}</strong>. Implementação é feita pelo Gemini (botão Fase N ou extensão).
           </p>
         )}
@@ -686,23 +686,23 @@ export function ChatSidebar() {
             }
           >
             <div
-              className={`rounded-md px-2 py-1.5 break-words ${
+              className={`rounded-md px-2 py-1.5 break-words border-l-2 ${
                 m.role === "user"
-                  ? "bg-vscode-accent/20 text-zinc-50"
-                  : "bg-vscode-bg/80 text-zinc-50"
+                  ? "bg-ds-accent-neon/20 border-ds-accent-neon text-ds-text-primary-light dark:text-ds-text-primary"
+                  : "bg-ds-bg-secondary-light dark:bg-vscode-bg/80 text-ds-text-primary-light dark:text-ds-text-primary border-ds-border-light dark:border-vscode-border"
               }`}
             >
-              <span className="text-[10px] font-medium text-zinc-300 block mb-0.5">
+              <span className="text-[10px] font-medium text-ds-text-secondary-light dark:text-ds-text-secondary block mb-0.5">
                 {m.role === "user" ? "Você" : "Engenheiro Chefe"}
               </span>
               {m.role === "user" ? (
-                <div className="whitespace-pre-wrap text-zinc-50">{m.content}</div>
+                <div className="whitespace-pre-wrap text-ds-text-primary-light dark:text-ds-text-primary">{m.content}</div>
               ) : (
                 <ChatCodeBlock
                   content={m.content}
                   onImplement={handleImplement}
                   onImplementAll={handleImplementAll}
-                  className="text-zinc-50"
+                  className="text-ds-text-primary-light dark:text-ds-text-primary"
                   buttonLabel={m.isAutocura ? "Aplicar Autocura" : "Implementar Mudanças"}
                 />
               )}
@@ -718,7 +718,7 @@ export function ChatSidebar() {
                   setInput(messages[i].content);
                   setMessages((prev) => prev.filter((_, idx) => idx !== i));
                 }}
-                className="rounded p-0.5 text-zinc-400 hover:text-zinc-200 hover:bg-vscode-sidebar-hover focus:outline-none focus:ring-1 focus:ring-vscode-accent"
+                className="rounded p-0.5 text-zinc-400 hover:text-zinc-200 hover:bg-vscode-sidebar-hover focus:outline-none focus-visible:ring-1 focus-visible:ring-ds-accent-neon"
                 title="Editar mensagem (volta para o campo de texto)"
                 aria-label="Editar mensagem"
               >
@@ -727,7 +727,7 @@ export function ChatSidebar() {
               <button
                 type="button"
                 onClick={() => setMessages((prev) => prev.filter((_, idx) => idx !== i))}
-                className="rounded p-0.5 text-zinc-400 hover:text-red-400 hover:bg-vscode-sidebar-hover focus:outline-none focus:ring-1 focus:ring-vscode-accent"
+                className="rounded p-0.5 text-ds-text-secondary-light dark:text-ds-text-secondary hover:text-red-500 hover:bg-ds-surface-hover-light dark:hover:bg-ds-surface-hover focus:outline-none focus-visible:ring-1 focus-visible:ring-ds-accent-neon"
                 title="Apagar da conversa"
                 aria-label="Apagar mensagem"
               >
@@ -737,13 +737,13 @@ export function ChatSidebar() {
           </div>
         ))}
         {progress != null && (progress.totalPending > 0 || progress.completedCount > 0) && (
-          <div className="rounded-md px-2 py-1.5 bg-vscode-bg/90 border border-vscode-border text-zinc-300 text-xs mr-4 flex items-center gap-2">
+          <div className="rounded-md px-2 py-1.5 bg-ds-bg-primary-light/90 dark:bg-ds-bg-primary/90 border border-ds-border-light dark:border-ds-border text-ds-text-primary-light dark:text-ds-text-primary text-xs mr-4 flex items-center gap-2">
             <span className="font-medium">
               Tarefa {progress.completedCount + 1} de {progress.totalPending + progress.completedCount}
             </span>
-            <div className="flex-1 min-w-[60px] h-1.5 rounded-full bg-vscode-sidebar overflow-hidden">
+            <div className="flex-1 min-w-[60px] h-1.5 rounded-full bg-ds-surface-light dark:bg-ds-surface overflow-hidden">
               <div
-                className="h-full bg-vscode-accent rounded-full transition-all"
+                className="h-full bg-ds-accent-neon rounded-full transition-all"
                 style={{
                   width: `${((progress.completedCount + 1) / (progress.totalPending + progress.completedCount)) * 100}%`,
                 }}
@@ -755,13 +755,13 @@ export function ChatSidebar() {
           <div className="rounded-md px-2 py-2 bg-amber-900/30 border border-amber-600/50 text-amber-200 text-xs mr-4">
             <div className="flex items-center gap-2 mb-1.5">
               <AlertTriangle className="w-4 h-4 shrink-0 text-amber-400" aria-hidden />
-              <span className="font-medium">A IA atingiu o limite de tokens. Clique em Continuar para completar o código antes de avançar.</span>
+              <span className="font-medium">Resposta truncada. A IA atingiu o limite de tokens. Clique em Continuar para completar o código antes de avançar.</span>
             </div>
             <button
               type="button"
               onClick={handleContinueGenerating}
               disabled={loadingContinue || loading}
-              className="flex items-center justify-center gap-1.5 rounded bg-amber-600 hover:bg-amber-700 text-white px-2 py-1.5 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-amber-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center justify-center gap-1.5 rounded bg-amber-600 hover:bg-amber-700 text-white px-2 py-1.5 text-xs font-medium focus:outline-none focus-visible:ring-1 focus-visible:ring-amber-500 disabled:opacity-50 disabled:cursor-not-allowed"
               aria-label="Continuar geração da resposta"
             >
               {loadingContinue ? (
@@ -772,14 +772,14 @@ export function ChatSidebar() {
           </div>
         )}
         {loading && (
-          <div className="flex items-center gap-1.5 text-zinc-50 text-xs">
+          <div className="flex items-center gap-1.5 text-ds-text-primary-light dark:text-ds-text-primary text-xs">
             <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden />
             Escrevendo...
           </div>
         )}
         {geminiFlowStatus && (
           <div
-            className="rounded-md px-2 py-1.5 text-xs font-medium mr-4 border border-vscode-border"
+            className="rounded-md px-2 py-1.5 text-xs font-medium mr-4 border border-ds-border-light dark:border-ds-border"
             role="status"
             aria-live="polite"
             style={{
@@ -802,7 +802,7 @@ export function ChatSidebar() {
         )}
       </div>
 
-      <div className="p-2 border-t border-vscode-border shrink-0 space-y-2">
+      <div className="p-2 border-t border-ds-border-light dark:border-ds-border shrink-0 space-y-2">
         {phaseOptions.length > 0 && (
           <div className="flex flex-wrap gap-1">
             {phaseOptions.map((p) => (
@@ -811,7 +811,7 @@ export function ChatSidebar() {
                 type="button"
                 onClick={() => handleExecutarFaseComGemini(p.number)}
                 disabled={loadingGeminiPhase || loading || !directoryHandle || !extensionOnline || geminiFlowStatus === "awaiting_gemini"}
-                className="rounded bg-vscode-sidebar border border-vscode-border px-2 py-1 text-[10px] text-zinc-50 hover:bg-vscode-sidebar-hover focus:outline-none focus:ring-1 focus:ring-vscode-accent disabled:opacity-50 disabled:cursor-not-allowed"
+                className="rounded bg-ds-surface-light dark:bg-ds-surface border border-ds-border-light dark:border-ds-border px-2 py-1 text-[10px] text-ds-text-primary-light dark:text-ds-text-primary hover:bg-ds-surface-hover-light dark:hover:bg-ds-surface-hover focus:outline-none focus-visible:ring-1 focus-visible:ring-ds-accent-neon disabled:opacity-50 disabled:cursor-not-allowed"
                 aria-label={`Executar Fase ${p.number} (Gemini)`}
                 title={`${p.title} — implementação via Gemini`}
               >
@@ -821,12 +821,12 @@ export function ChatSidebar() {
           </div>
         )}
         {phaseBuffer.length > 0 && phaseBufferPhaseLines != null && (
-          <div className="rounded-md px-2 py-2 bg-green-900/20 border border-green-600/40 text-zinc-50 text-xs">
+          <div className="rounded-md px-2 py-2 bg-green-900/20 dark:bg-green-900/20 border border-green-600/40 dark:border-green-600/40 text-ds-text-primary-light dark:text-ds-text-primary text-xs">
             <p className="font-medium mb-1">Fase concluída pelo Gemini ({phaseBuffer.length} arquivo(s))</p>
             <button
               type="button"
               onClick={() => implementPhaseFromBuffer()}
-              className="w-full flex items-center justify-center gap-1.5 rounded bg-green-700 hover:bg-green-600 text-white px-2 py-1.5 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-green-500"
+              className="w-full flex items-center justify-center gap-1.5 rounded bg-ds-accent-light dark:bg-ds-accent-neon hover:bg-ds-accent-light-hover dark:hover:bg-ds-accent-neon-hover text-white dark:text-gray-900 px-2 py-1.5 text-xs font-medium shadow-[var(--ds-glow-neon)] focus:outline-none focus-visible:ring-1 focus-visible:ring-ds-accent-neon"
               aria-label="Implementar Fase (abrir Diff e salvar)"
             >
               <Play className="w-3.5 h-3.5" aria-hidden />
@@ -841,7 +841,7 @@ export function ChatSidebar() {
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
             placeholder="Mensagem para o Analista..."
-            className="flex-1 min-w-0 rounded bg-vscode-input border border-vscode-border px-2 py-1.5 text-sm text-gray-600 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-vscode-accent"
+            className="flex-1 min-w-0 rounded bg-[var(--vscode-input)] border border-ds-border-light dark:border-ds-border px-2 py-1.5 text-sm text-ds-text-primary-light dark:text-ds-text-primary placeholder-ds-text-muted-light dark:placeholder-ds-text-muted focus:outline-none focus-visible:ring-1 focus-visible:ring-ds-accent-neon disabled:opacity-50 disabled:cursor-not-allowed"
             disabled={loading}
             aria-label="Mensagem do chat"
           />
@@ -849,7 +849,7 @@ export function ChatSidebar() {
             type="button"
             onClick={handleSend}
             disabled={loading || !input.trim()}
-            className="shrink-0 rounded bg-vscode-accent text-white p-1.5 hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="shrink-0 rounded bg-ds-accent-light dark:bg-ds-accent-neon text-white dark:text-gray-900 p-1.5 hover:bg-ds-accent-light-hover dark:hover:bg-ds-accent-neon-hover shadow-[var(--ds-glow-neon)] focus:outline-none focus-visible:ring-1 focus-visible:ring-ds-accent-neon focus-visible:ring-offset-1 focus-visible:ring-offset-ds-surface-light dark:focus-visible:ring-offset-ds-surface disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-ds-surface-light dark:disabled:bg-ds-surface disabled:text-ds-text-muted-light dark:disabled:text-ds-text-muted disabled:shadow-none"
             aria-label="Enviar mensagem"
           >
             <Send className="w-4 h-4" />

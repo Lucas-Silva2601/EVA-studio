@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 function getStoredSize(key: string, initial: number, min: number, max: number): number {
   if (typeof window === "undefined") return initial;
@@ -18,6 +18,7 @@ function getStoredSize(key: string, initial: number, min: number, max: number): 
  * Hook para redimensionar painéis (sidebar horizontal, painel vertical).
  * Para painel à direita (edge: "right"), arrastar a alça para a esquerda aumenta a largura.
  * Se storageKey for passado, o tamanho é salvo e restaurado do localStorage.
+ * O valor inicial é sempre initialSize no primeiro render para evitar mismatch de hidratação (SSR vs cliente).
  */
 export function useResize(
   initialSize: number,
@@ -29,9 +30,14 @@ export function useResize(
   /** Chave no localStorage para persistir o tamanho (ex.: "eva-sidebar-width"). */
   storageKey?: string
 ) {
-  const [size, setSizeState] = useState(() =>
-    storageKey ? getStoredSize(storageKey, initialSize, min, max) : initialSize
-  );
+  const [size, setSizeState] = useState(initialSize);
+  useEffect(() => {
+    if (storageKey) {
+      const stored = getStoredSize(storageKey, initialSize, min, max);
+      if (stored !== initialSize) setSizeState(stored);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- restaurar do localStorage apenas na montagem
+  }, []);
   const isDragging = useRef(false);
   const startPos = useRef(0);
   const startSize = useRef(0);

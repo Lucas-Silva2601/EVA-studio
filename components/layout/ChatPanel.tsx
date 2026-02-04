@@ -37,13 +37,13 @@ export function ChatPanel() {
   return (
     <div
       ref={panelRef}
-      className="flex shrink-0 h-full bg-vscode-sidebar border-l border-vscode-border"
+      className="flex shrink-0 h-full bg-ds-surface-light dark:bg-ds-surface border-l border-ds-border-light dark:border-ds-border"
       style={{ width: size }}
       role="complementary"
       aria-label="Chat EVA"
     >
       <div
-        className="w-2 shrink-0 bg-vscode-border hover:bg-blue-500/60 transition-colors cursor-col-resize flex-shrink-0"
+        className="resize-handle-horizontal shrink-0 flex-shrink-0 flex items-center justify-center"
         role="separator"
         aria-orientation="vertical"
         aria-valuenow={size}
@@ -54,7 +54,9 @@ export function ChatPanel() {
           if (e.key === "ArrowLeft") setSize((s) => Math.min(CHAT_MAX, s + 10));
           if (e.key === "ArrowRight") setSize((s) => Math.max(CHAT_MIN, s - 10));
         }}
-      />
+      >
+        <span className="resize-handle-inner w-0.5 h-8" aria-hidden />
+      </div>
       <div className="flex-1 min-w-0 flex flex-col min-h-0 overflow-hidden">
         <ChatSidebar />
       </div>

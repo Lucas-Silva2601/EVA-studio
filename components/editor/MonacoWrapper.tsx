@@ -11,6 +11,8 @@ interface MonacoWrapperProps {
   content: string;
   language: string;
   onChange: (value: string) => void;
+  /** Tema do editor: "vs-dark" quando dark, "vs" quando light (Fase 6). */
+  theme?: "dark" | "light";
 }
 
 /**
@@ -38,7 +40,8 @@ function ensureMonacoWorkerFromCDN() {
  * Usa CDN para workers quando não configurados localmente (evita 404).
  * Chama editor.layout() quando o container redimensiona (ex.: painel do chat).
  */
-export function MonacoWrapper({ path, content, language, onChange }: MonacoWrapperProps) {
+export function MonacoWrapper({ path, content, language, onChange, theme = "dark" }: MonacoWrapperProps) {
+  const monacoTheme = theme === "dark" ? "vs-dark" : "vs";
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
 
@@ -66,7 +69,7 @@ export function MonacoWrapper({ path, content, language, onChange }: MonacoWrapp
         onMount={(editor) => {
           editorRef.current = editor;
         }}
-        theme="vs-dark"
+        theme={monacoTheme}
         options={{
           minimap: { enabled: true },
           lineNumbers: "on",
@@ -79,7 +82,7 @@ export function MonacoWrapper({ path, content, language, onChange }: MonacoWrapp
           padding: { top: 16 },
         }}
         loading={
-          <div className="flex items-center justify-center h-full text-gray-500">
+          <div className="flex items-center justify-center h-full text-ds-text-muted-light dark:text-ds-text-muted">
             Carregando editor...
           </div>
         }

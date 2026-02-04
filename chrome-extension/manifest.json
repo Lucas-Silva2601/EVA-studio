@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "EVA Studio Bridge v2.0",
-  "version": "2.0.0",
+  "name": "EVA Studio Bridge v3.0",
+  "version": "3.0",
   "description": "Ponte entre a IDE EVA Studio (localhost) e o Google Gemini (gemini.google.com). Groq orquestra; Gemini atua como Programador.",
   "permissions": [
     "tabs",
@@ -11,14 +11,15 @@
   "host_permissions": [
     "http://localhost:3000/*",
     "http://127.0.0.1:3000/*",
-    "https://gemini.google.com/*"
+    "https://gemini.google.com/*",
+    "https://www.gemini.google.com/*"
   ],
   "background": {
     "service_worker": "background.js"
   },
   "content_scripts": [
     {
-      "matches": ["https://gemini.google.com/*"],
+      "matches": ["https://gemini.google.com/*", "https://www.gemini.google.com/*"],
       "js": ["content-gemini.js"],
       "run_at": "document_idle"
     },
@@ -33,6 +34,6 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "EVA Bridge v2.0 – Status"
+    "default_title": "EVA Bridge v3.0 – Status"
   }
 }

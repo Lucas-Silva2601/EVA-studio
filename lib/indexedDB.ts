@@ -2,6 +2,10 @@
  * Persistência do Directory Handle em IndexedDB (Fase 7).
  * No Chrome, FileSystemDirectoryHandle pode ser armazenado e recuperado;
  * o usuário não precisa reselecionar a pasta a cada refresh.
+ *
+ * Suporte: a persistência do handle só funciona em navegadores que permitem
+ * armazenar FileSystemDirectoryHandle no IndexedDB (ex.: Chrome). Em outros
+ * navegadores, o usuário precisará reabrir a pasta após recarregar a página.
  */
 
 const DB_NAME = "eva-studio-db";

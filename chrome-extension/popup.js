@@ -1,5 +1,5 @@
 /**
- * EVA Bridge v2.0 - Popup: status de conexão IDE (localhost) e aba Gemini.
+ * EVA Bridge v3.0 - Popup: status de conexão IDE (localhost) e aba Gemini.
  */
 (function () {
   const STORAGE_KEYS = { IDE_TAB_ID: "eva_ide_tab_id", GEMINI_TAB_ID: "eva_gemini_tab_id" };
@@ -30,7 +30,13 @@
     if (geminiTabId) {
       try {
         const tab = await chrome.tabs.get(geminiTabId);
-        geminiOk = !!tab && tab.url?.includes("gemini.google.com");
+        geminiOk = !!tab && tab.url && (tab.url.includes("gemini.google.com"));
+      } catch (_) {}
+    }
+    if (!geminiOk) {
+      try {
+        const tabs = await chrome.tabs.query({ url: ["https://gemini.google.com/*", "https://www.gemini.google.com/*"] });
+        geminiOk = tabs.length > 0;
       } catch (_) {}
     }
 

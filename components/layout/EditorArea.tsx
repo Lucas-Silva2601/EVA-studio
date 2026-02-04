@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect } from "react";
-import { X, Save } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { X, Save, Check } from "lucide-react";
 import { useIdeState } from "@/hooks/useIdeState";
+import { useTheme } from "@/hooks/useTheme";
 import { MonacoWrapper } from "@/components/editor/MonacoWrapper";
 
 /**
@@ -18,18 +19,31 @@ export function EditorArea() {
     saveCurrentFile,
   } = useIdeState();
 
+  const activeFile = openFiles.find((f) => f.path === activeFilePath);
+  const { theme } = useTheme();
+  const [savedFeedback, setSavedFeedback] = useState(false);
+
+  const handleSave = useCallback(async () => {
+    await saveCurrentFile();
+    setSavedFeedback(true);
+  }, [saveCurrentFile]);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === "s") {
         e.preventDefault();
-        saveCurrentFile();
+        handleSave();
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [saveCurrentFile]);
+  }, [handleSave]);
 
-  const activeFile = openFiles.find((f) => f.path === activeFilePath);
+  useEffect(() => {
+    if (!savedFeedback) return;
+    const t = setTimeout(() => setSavedFeedback(false), 1500);
+    return () => clearTimeout(t);
+  }, [savedFeedback]);
 
   const handleContentChange = useCallback(
     (path: string, value: string) => {
@@ -43,7 +57,7 @@ export function EditorArea() {
   if (openFiles.length === 0) {
     return (
       <div
-        className="flex-1 flex flex-col items-center justify-center bg-vscode-editor text-gray-500"
+        className="flex-1 flex flex-col items-center justify-center bg-ds-bg-primary-light dark:bg-ds-bg-primary text-ds-text-muted-light dark:text-ds-text-muted"
         role="region"
         aria-label="Área do editor"
       >
@@ -55,12 +69,12 @@ export function EditorArea() {
 
   return (
     <div
-      className="flex-1 flex flex-col min-w-0 bg-vscode-editor"
+      className="flex-1 flex flex-col min-w-0 bg-ds-bg-primary-light dark:bg-ds-bg-primary"
       role="region"
       aria-label="Editor de código"
     >
       {/* Abas + Salvar */}
-      <div className="flex items-end shrink-0 border-b border-vscode-border bg-vscode-sidebar/50 overflow-x-auto">
+      <div className="flex items-end shrink-0 border-b border-ds-border-light dark:border-ds-border bg-ds-surface-light/50 dark:bg-ds-surface/50 overflow-x-auto">
         <div className="flex flex-1 min-w-0">
         {openFiles.map((file) => {
           const isActive = file.path === activeFilePath;
@@ -71,10 +85,10 @@ export function EditorArea() {
               aria-selected={isActive}
               aria-controls="editor-panel"
               id={`tab-${file.path}`}
-              className={`flex items-center gap-2 px-3 py-2 border-r border-vscode-border cursor-pointer min-w-0 max-w-[180px] group ${
+              className={`flex items-center gap-2 px-3 py-2 border-r border-ds-border-light dark:border-ds-border cursor-pointer min-w-0 max-w-[180px] group ${
                 isActive
-                  ? "bg-vscode-editor text-white border-b-2 border-b-vscode-editor -mb-px"
-                  : "bg-vscode-sidebar/80 text-gray-400 hover:text-gray-200 hover:bg-vscode-sidebar-hover"
+                  ? "bg-ds-bg-primary-light dark:bg-ds-bg-primary text-ds-text-primary-light dark:text-ds-text-primary border-b-2 border-b-ds-bg-primary-light dark:border-b-ds-bg-primary -mb-px"
+                  : "bg-ds-surface-light/80 dark:bg-ds-surface/80 text-ds-text-secondary-light dark:text-ds-text-secondary hover:text-ds-text-primary-light dark:hover:text-ds-text-primary hover:bg-ds-surface-hover-light dark:hover:bg-ds-surface-hover"
               }`}
               onClick={() => setActiveFilePath(file.path)}
             >
@@ -85,7 +99,7 @@ export function EditorArea() {
                   e.stopPropagation();
                   closeFile(file.path);
                 }}
-                className="p-0.5 rounded hover:bg-white/10 focus:outline-none focus:ring-1 focus:ring-vscode-accent opacity-70 group-hover:opacity-100"
+                className="p-0.5 rounded hover:bg-white/10 focus:outline-none focus-visible:ring-1 focus-visible:ring-ds-accent-neon opacity-70 group-hover:opacity-100"
                 aria-label={`Fechar ${file.name}`}
               >
                 <X className="w-3.5 h-3.5" aria-hidden />
@@ -96,13 +110,17 @@ export function EditorArea() {
         </div>
         <button
           type="button"
-          onClick={() => saveCurrentFile()}
-          className="flex items-center gap-2 px-3 py-2 shrink-0 text-sm text-gray-400 hover:text-white hover:bg-vscode-sidebar-hover focus:outline-none focus:ring-1 focus:ring-vscode-accent"
+          onClick={() => handleSave()}
+          className={`flex items-center gap-2 px-3 py-2 shrink-0 text-sm focus:outline-none focus-visible:ring-1 focus-visible:ring-ds-accent-neon ${
+            savedFeedback
+              ? "text-ds-accent-light dark:text-ds-accent-neon bg-ds-accent-light/20 dark:bg-ds-accent-neon/20"
+              : "text-ds-text-secondary-light dark:text-ds-text-secondary hover:text-ds-accent-light dark:hover:text-ds-accent-neon hover:bg-ds-surface-hover-light dark:hover:bg-ds-surface-hover"
+          }`}
           aria-label="Salvar arquivo (Ctrl+S)"
-          title="Salvar (Ctrl+S)"
+          title={savedFeedback ? "Salvo" : "Salvar (Ctrl+S)"}
         >
-          <Save className="w-4 h-4" aria-hidden />
-          Salvar
+          {savedFeedback ? <Check className="w-4 h-4" aria-hidden /> : <Save className="w-4 h-4" aria-hidden />}
+          {savedFeedback ? "Salvo" : "Salvar"}
         </button>
       </div>
       {/* Editor */}
@@ -118,6 +136,7 @@ export function EditorArea() {
             content={activeFile.content}
             language={activeFile.language ?? "plaintext"}
             onChange={(value) => handleContentChange(activeFile.path, value)}
+            theme={theme}
           />
         )}
       </div>

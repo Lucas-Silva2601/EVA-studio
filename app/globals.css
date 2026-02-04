@@ -2,62 +2,266 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ==========================================================================
+   Design Tokens — variáveis CSS (:root)
+   Documentação: docs/design-tokens.md
+   ========================================================================== */
+
 :root {
-  --vscode-bg: #1e1e1e;
-  --vscode-sidebar: #252526;
-  --vscode-editor: #1e1e1e;
-  --vscode-panel: #181818;
-  --vscode-border: #3c3c3c;
-  --vscode-titlebar: #323233;
-  --vscode-accent: #0e639c;
+  /* Backgrounds */
+  --ds-bg-primary: #1e1e1e;
+  --ds-bg-secondary: #181818;
+  --ds-surface: #252526;
+  --ds-surface-hover: #2a2d2e;
+  --ds-surface-elevated: #323233;
+
+  /* Bordas */
+  --ds-border: #3c3c3c;
+
+  /* Accent */
+  --ds-accent: #0e639c;
+  --ds-accent-hover: #1177bb;
+  --ds-accent-neon: #39ff14;
+  --ds-accent-neon-hover: #5fff50;
+
+  /* Glow neon (box-shadow) */
+  --ds-glow-neon: 0 0 10px rgba(57, 255, 20, 0.3);
+
+  /* Texto */
+  --ds-text-primary: #e5e5e5;
+  --ds-text-secondary: #a3a3a3;
+  --ds-text-muted: #737373;
+  --ds-text-info: #d1d5db;
+  --ds-text-success: #4ade80;
+  --ds-text-warning: #facc15;
+  --ds-text-error: #f87171;
+
+  /* Scrollbars (consistência; thumb-hover neon no tema escuro) */
+  --ds-scrollbar-track: #27272a;
+  --ds-scrollbar-thumb: #52525b;
+  --ds-scrollbar-thumb-hover: #39ff14;
+
+  /* Layout e densidade (Fase 6) */
+  --ds-titlebar-height: 2.5rem;
+  --ds-panel-header-height: 2.5rem;
+  --ds-sidebar-min: 140px;
+  --ds-chat-min: 250px;
+  --ds-editor-min: 280px;
+
+  /* Aliases vscode-* (retrocompatibilidade) */
+  --vscode-bg: var(--ds-bg-primary);
+  --vscode-sidebar: var(--ds-surface);
+  --vscode-editor: var(--ds-bg-primary);
+  --vscode-panel: var(--ds-bg-secondary);
+  --vscode-border: var(--ds-border);
+  --vscode-titlebar: var(--ds-surface-elevated);
+  --vscode-accent: var(--ds-accent);
+  --vscode-input: #2d2d2d;
+  /* Alias neon: vscode-accent pode apontar para neon no tema dark/neon (Fase 2) */
+  --vscode-accent-neon: var(--ds-accent-neon);
+}
+
+/* ==========================================================================
+   Tema claro — variáveis aplicadas quando html não tem class="dark"
+   Documentação: docs/tema-neon-fase-03-paleta-claro.md
+   ========================================================================== */
+
+html:not(.dark) {
+  /* Backgrounds */
+  --ds-bg-primary: #f6f8fa;
+  --ds-bg-secondary: #eaeef2;
+  --ds-surface: #ffffff;
+  --ds-surface-hover: #f0f2f5;
+  --ds-surface-elevated: #f0f0f0;
+
+  /* Bordas */
+  --ds-border: #d0d7de;
+
+  /* Accent (verde escuro para contraste no claro) */
+  --ds-accent: #00aa44;
+  --ds-accent-hover: #00c044;
+
+  /* Texto */
+  --ds-text-primary: #24292f;
+  --ds-text-secondary: #57606a;
+  --ds-text-muted: #8b949e;
+  --ds-text-info: #57606a;
+  --ds-text-success: #1a7f37;
+  --ds-text-warning: #9a6700;
+  --ds-text-error: #cf222e;
+
+  /* Scrollbars tema claro */
+  --ds-scrollbar-track: #eaeef2;
+  --ds-scrollbar-thumb: #afb8c1;
+  --ds-scrollbar-thumb-hover: #8b949e;
+
+  /* Input (tema claro) */
+  --vscode-input: #ffffff;
+}
+
+/* Títulos de painéis no tema claro (accent verde) */
+html:not(.dark) .panel-title {
+  color: var(--ds-accent);
+}
+
+/* Classe utilitária para glow neon */
+.glow-neon {
+  box-shadow: var(--ds-glow-neon);
 }
 
 * {
   box-sizing: border-box;
 }
 
-html, body {
+/* Transições em botões e elementos interativos */
+button,
+[role="button"],
+a {
+  transition: color 150ms ease, background-color 150ms ease, opacity 150ms ease, border-color 150ms ease;
+}
+
+/* Transição suave na troca de tema (Fase 6) */
+.theme-transition {
+  transition: background-color 200ms ease, color 200ms ease;
+}
+
+html,
+body {
   height: 100%;
   margin: 0;
   overflow: hidden;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif;
 }
 
-/* Resize handles - acessibilidade */
-.resize-handle {
-  cursor: col-resize;
+/* Títulos de painéis — hierarquia visual unificada (Fase 6), tema neon */
+.panel-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ds-accent-neon);
+}
+
+/* Transições padronizadas (150–200ms) — Fase 5 */
+.transition-interactive {
+  transition: color 150ms ease, background-color 150ms ease, opacity 150ms ease, border-color 150ms ease;
+}
+
+.transition-panel {
+  transition: height 200ms ease-out;
+}
+
+/* Resize handles - estilo unificado, visíveis em ambos os temas e acessibilidade */
+.resize-handle-horizontal,
+.resize-handle-vertical {
+  background-color: var(--ds-border);
+  transition: background-color 150ms ease;
   user-select: none;
+  flex-shrink: 0;
+}
+
+.resize-handle-horizontal {
+  cursor: col-resize;
+  width: 8px;
+  min-width: 8px;
 }
 
 .resize-handle-vertical {
   cursor: row-resize;
-  user-select: none;
+  height: 20px;
+  min-height: 20px;
 }
 
-.resize-handle:focus,
+/* Tema claro: alça mais visível (cinza médio) */
+html:not(.dark) .resize-handle-horizontal,
+html:not(.dark) .resize-handle-vertical {
+  background-color: #8b949e;
+}
+
+html:not(.dark) .resize-handle-horizontal:hover,
+html:not(.dark) .resize-handle-vertical:hover {
+  background-color: var(--ds-accent);
+}
+
+.resize-handle-horizontal:hover,
+.resize-handle-vertical:hover {
+  background-color: var(--ds-accent-neon);
+}
+
+html:not(.dark) .resize-handle-horizontal:hover,
+html:not(.dark) .resize-handle-vertical:hover {
+  background-color: var(--ds-accent);
+}
+
+.resize-handle-horizontal:focus,
 .resize-handle-vertical:focus {
-  outline: 2px solid var(--vscode-accent);
+  outline: 2px solid var(--ds-accent-neon);
   outline-offset: -2px;
+}
+
+html:not(.dark) .resize-handle-horizontal:focus,
+html:not(.dark) .resize-handle-vertical:focus {
+  outline-color: var(--ds-accent);
+}
+
+.resize-handle-inner {
+  background-color: rgba(255, 255, 255, 0.5);
+  border-radius: 9999px;
+  opacity: 0.7;
+}
+
+html:not(.dark) .resize-handle-inner {
+  background-color: rgba(255, 255, 255, 0.8);
+}
+
+.resize-handle-horizontal:hover .resize-handle-inner,
+.resize-handle-vertical:hover .resize-handle-inner {
+  background-color: rgba(255, 255, 255, 0.9);
 }
 
 /* Scrollbars visíveis (Output, Explorador, Chat) */
 .scrollbar-thin {
   scrollbar-width: thin;
-  scrollbar-color: #52525b #27272a;
+  scrollbar-color: var(--ds-scrollbar-thumb) var(--ds-scrollbar-track);
 }
+
 .scrollbar-thin::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
+
 .scrollbar-thin::-webkit-scrollbar-track {
-  background: #27272a;
+  background: var(--ds-scrollbar-track);
 }
+
 .scrollbar-thin::-webkit-scrollbar-thumb {
-  background: #52525b;
+  background: var(--ds-scrollbar-thumb);
   border-radius: 5px;
 }
+
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-  background: #71717a;
+  background: var(--ds-scrollbar-thumb-hover);
 }
+
 .scrollbar-thin::-webkit-scrollbar-corner {
-  background: #27272a;
+  background: var(--ds-scrollbar-track);
+}
+
+/* ==========================================================================
+   Alto contraste (prefers-contrast: more)
+   Documentação: docs/design-fase-02-tema-modo-escuro.md
+   ========================================================================== */
+
+@media (prefers-contrast: more) {
+  .resize-handle-horizontal:focus,
+  .resize-handle-vertical:focus,
+  button:focus-visible,
+  [role="button"]:focus-visible,
+  a:focus-visible,
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible {
+    outline-width: 3px;
+    outline-offset: 2px;
+  }
 }
