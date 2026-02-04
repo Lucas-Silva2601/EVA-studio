@@ -648,7 +648,7 @@ export function ChatSidebar() {
           Chat EVA
         </h2>
         <span
-          className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${extensionOnline ? "text-green-400 bg-green-900/30" : "text-red-400 bg-red-900/30"}`}
+          className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${extensionOnline ? "text-green-700 bg-green-100 dark:text-green-400 dark:bg-green-900/30" : "text-red-700 bg-red-100 dark:text-red-400 dark:bg-red-900/30"}`}
           title={extensionOnline ? "Extensão EVA Bridge conectada (Gemini)" : "Extensão offline. Instale a EVA Bridge e abra gemini.google.com."}
         >
           {extensionOnline ? "Online" : "Offline"}
@@ -688,21 +688,21 @@ export function ChatSidebar() {
             <div
               className={`rounded-md px-2 py-1.5 break-words border-l-2 ${
                 m.role === "user"
-                  ? "bg-ds-accent-neon/20 text-ds-text-primary border-ds-accent-neon"
-                  : "bg-vscode-bg/80 text-ds-text-primary border-vscode-border"
+                  ? "bg-ds-accent-neon/20 border-ds-accent-neon text-ds-text-primary-light dark:text-ds-text-primary"
+                  : "bg-vscode-bg/80 text-ds-text-primary-light dark:text-ds-text-primary border-vscode-border"
               }`}
             >
               <span className="text-[10px] font-medium text-ds-text-secondary-light dark:text-ds-text-secondary block mb-0.5">
                 {m.role === "user" ? "Você" : "Engenheiro Chefe"}
               </span>
               {m.role === "user" ? (
-                <div className="whitespace-pre-wrap text-ds-text-primary">{m.content}</div>
+                <div className="whitespace-pre-wrap text-ds-text-primary-light dark:text-ds-text-primary">{m.content}</div>
               ) : (
                 <ChatCodeBlock
                   content={m.content}
                   onImplement={handleImplement}
                   onImplementAll={handleImplementAll}
-                  className="text-ds-text-primary"
+                  className="text-ds-text-primary-light dark:text-ds-text-primary"
                   buttonLabel={m.isAutocura ? "Aplicar Autocura" : "Implementar Mudanças"}
                 />
               )}

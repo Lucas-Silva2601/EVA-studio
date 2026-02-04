@@ -67,13 +67,35 @@ export function extractFilePathStrict(text: string): string | null {
 export function inferFilenameFromContent(content: string): string | null {
   const trimmed = content.trim();
   if (!trimmed) return null;
-  const first = trimmed.slice(0, 200).toLowerCase();
+  const first = trimmed.slice(0, 400).toLowerCase();
   if (first.includes("<!doctype") || first.startsWith("<html") || first.startsWith("<!DOCTYPE")) return "index.html";
-  if (first.includes("<style") || (first.includes("{") && first.includes(":")) && first.includes("px") && !first.includes("function")) return "style.css";
+  // CSS: <style ou padrão { prop: valor } com unidades/propriedades típicas (px, em, rem, %, color:, margin:, etc.)
+  const hasBracesAndColon = first.includes("{") && first.includes(":");
+  const hasCssHint =
+    first.includes("<style") ||
+    first.includes("px") ||
+    first.includes("em") ||
+    first.includes("rem") ||
+    /\d\s*%/.test(first) ||
+    first.includes("color:") ||
+    first.includes("margin:") ||
+    first.includes("padding:") ||
+    first.includes("font-size:") ||
+    first.includes("width:") ||
+    first.includes("height:") ||
+    first.includes("background") ||
+    first.includes("border:") ||
+    first.includes("display:");
+  const hasJsHint =
+    first.includes("function ") || first.includes("=>") || first.includes("const ") || first.includes("export ");
+  if (hasCssHint && (first.includes("<style") || (hasBracesAndColon && !hasJsHint))) return "style.css";
   if (first.includes("import react") || first.includes("from \"react\"") || first.includes("from 'react'")) return "App.jsx";
-  if (first.includes("function ") || first.includes("const ") && first.includes("=>") || first.includes("export ")) return "script.js";
-  if (first.includes("def ") || first.includes("import ")) return "script.py";
+  if (first.includes("function ") || (first.includes("const ") && first.includes("=>")) || first.includes("export "))
+    return "script.js";
+  if (first.includes("def ") || (first.includes("import ") && !first.includes("react"))) return "script.py";
   if (first.startsWith("{") || first.startsWith("[")) return "data.json";
+  if (first.startsWith("# ") || first.includes("## ") || first.includes("- [ ]") || first.includes("- [x]"))
+    return "checklist.md";
   return null;
 }
 

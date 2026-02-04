@@ -43,21 +43,21 @@ export function TitleBar() {
         <button
           type="button"
           onClick={toggleTheme}
-          className="flex items-center gap-2 px-2.5 py-1.5 rounded text-sm hover:bg-ds-surface-hover-light dark:hover:bg-ds-surface-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-ds-accent-neon"
+          className="flex items-center gap-2 px-2.5 py-1.5 rounded text-sm text-ds-text-primary-light dark:text-ds-text-primary hover:bg-ds-surface-hover-light dark:hover:bg-ds-surface-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-ds-accent-neon"
           aria-label={theme === "dark" ? "Alternar para tema claro" : "Alternar para tema escuro"}
           title={theme === "dark" ? "Tema claro" : "Tema escuro"}
         >
-          {theme === "dark" ? <Sun className="w-4 h-4" aria-hidden /> : <Moon className="w-4 h-4" aria-hidden />}
+          {theme === "dark" ? <Sun className="w-4 h-4 shrink-0" aria-hidden /> : <Moon className="w-4 h-4 shrink-0" aria-hidden />}
         </button>
         <button
           type="button"
           onClick={handleOpenFolder}
           disabled={opening}
-          className="flex items-center gap-2 px-3 py-1.5 rounded text-sm hover:bg-ds-surface-hover-light dark:hover:bg-ds-surface-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-ds-accent-neon disabled:opacity-50"
+          className="flex items-center gap-2 px-3 py-1.5 rounded text-sm text-ds-text-primary-light dark:text-ds-text-primary hover:bg-ds-surface-hover-light dark:hover:bg-ds-surface-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-ds-accent-neon disabled:opacity-50"
           aria-label="Abrir pasta local"
           title="Abrir pasta local"
         >
-          {opening ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden /> : <FolderOpen className="w-4 h-4" aria-hidden />}
+          {opening ? <Loader2 className="w-4 h-4 shrink-0 animate-spin" aria-hidden /> : <FolderOpen className="w-4 h-4 shrink-0" aria-hidden />}
           {opening ? "Abrindo…" : "Abrir pasta"}
         </button>
         {folderName && (
