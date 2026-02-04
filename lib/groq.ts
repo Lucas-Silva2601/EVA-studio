@@ -5,6 +5,9 @@
 
 import type { ChecklistAnalysisResult, ValidationResult } from "@/types";
 
+const API_GROQ_NOT_FOUND_MSG =
+  "Erro: Servidor de IA não encontrado. Verifique se a pasta api/groq foi criada corretamente.";
+
 async function groqFetch(action: string, payload: unknown): Promise<string> {
   const res = await fetch("/api/groq", {
     method: "POST",
@@ -12,10 +15,19 @@ async function groqFetch(action: string, payload: unknown): Promise<string> {
     body: JSON.stringify({ action, payload }),
   });
 
-  const data = (await res.json()) as { result?: string; error?: string };
+  let data: { result?: string; error?: string } = {};
+  try {
+    data = (await res.json()) as { result?: string; error?: string };
+  } catch {
+    // 404/500 podem não retornar JSON
+  }
 
   if (!res.ok) {
-    throw new Error(data.error ?? `Erro ${res.status}`);
+    const message =
+      res.status === 404 || res.status === 500
+        ? API_GROQ_NOT_FOUND_MSG
+        : data.error ?? `Erro ${res.status}`;
+    throw new Error(message);
   }
 
   return data.result ?? "";
@@ -34,14 +46,23 @@ async function groqFetchChat(payload: unknown): Promise<ChatResponse> {
     body: JSON.stringify({ action: "chat", payload }),
   });
 
-  const data = (await res.json()) as {
-    result?: string;
-    is_truncated?: boolean;
-    error?: string;
-  };
+  let data: { result?: string; is_truncated?: boolean; error?: string } = {};
+  try {
+    data = (await res.json()) as {
+      result?: string;
+      is_truncated?: boolean;
+      error?: string;
+    };
+  } catch {
+    // 404/500 podem não retornar JSON
+  }
 
   if (!res.ok) {
-    throw new Error(data.error ?? `Erro ${res.status}`);
+    const message =
+      res.status === 404 || res.status === 500
+        ? API_GROQ_NOT_FOUND_MSG
+        : data.error ?? `Erro ${res.status}`;
+    throw new Error(message);
   }
 
   return {
@@ -77,20 +98,6 @@ export async function analyzeChecklist(
 }
 
 /**
- * Gera o prompt para o Google AI Studio executar a tarefa.
- * projectContext: resumo da árvore de arquivos e assinaturas (Project Context Packer).
- */
-export async function generatePromptForAiStudio(payload: {
-  taskDescription: string;
-  suggestedFile?: string | null;
-  suggestedTech?: string | null;
-  projectContext?: string | null;
-}): Promise<string> {
-  const result = await groqFetch("generate_prompt", payload);
-  return result.trim();
-}
-
-/**
  * Valida se o arquivo atende à tarefa do checklist. Retorna approved e, se aprovado, a linha a marcar [x].
  */
 export async function validateFileAndTask(payload: {
@@ -113,29 +120,30 @@ export async function validateFileAndTask(payload: {
 }
 
 /**
- * Fase 8.2: Envia erro de execução ao Analista e retorna sugestão de correção.
+ * Fase 12 (Autocura): Analista analisa o erro e retorna texto + prompt sugerido para o Gemini. Não gera código.
  */
 export async function reportErrorToAnalyst(payload: {
   taskDescription?: string | null;
   filePath: string;
   errorMessage: string;
   stack?: string | null;
+  fileContent?: string | null;
+  projectId?: string | null;
 }): Promise<string> {
   const result = await groqFetch("report_error", payload);
   return result.trim();
 }
 
 /**
- * Chat com o Agente (Groq) — contexto total: árvore, conteúdo do projeto, arquivo aberto, checklist.
- * Retorna conteúdo + isTruncated (true se a resposta foi cortada por limite de tokens).
+ * Chat com o Analista (Groq). Groq não gera código; só analisa e supervisiona.
+ * projectId identifica o projeto nesta conversa (ex.: nome da pasta).
  */
 export async function chatWithAnalyst(payload: {
   messages: Array<{ role: "user" | "assistant"; content: string }>;
-  /** Conteúdo completo do projeto (árvore + arquivos .js, .ts, .html, .css, .py, .md) para a IA ler todo o projeto. */
+  /** Identificador do projeto (ex.: nome da pasta) para o Analista identificar a conversa. */
+  projectId: string;
   projectContext?: string | null;
-  /** Arquivo aberto no editor no momento. */
   openFileContext?: { path: string; content: string } | null;
-  /** Conteúdo do checklist.md (grounding). */
   checklistContext?: string | null;
 }): Promise<ChatResponse> {
   const response = await groqFetchChat(payload);
@@ -143,6 +151,14 @@ export async function chatWithAnalyst(payload: {
     content: response.content.trim(),
     isTruncated: response.isTruncated,
   };
+}
+
+/**
+ * Fase 13: Gera código Mermaid (gráfico de estrutura/dependências) a partir da árvore de arquivos.
+ */
+export async function getProjectMermaid(treeText: string): Promise<string> {
+  const result = await groqFetch("mermaid", { treeText });
+  return result.trim();
 }
 
 /**
@@ -154,4 +170,24 @@ export async function chatToChecklistTasks(payload: {
 }): Promise<string> {
   const result = await groqFetch("chat_to_tasks", payload);
   return result.trim();
+}
+
+/**
+ * Orquestrador: gera o prompt para enviar ao Gemini (EVA Bridge). Fase X + tópico atual.
+ */
+export async function getPromptForGemini(payload: {
+  phaseNumber: number;
+  taskDescription: string;
+  projectContext?: string | null;
+}): Promise<string> {
+  const result = await groqFetch("prompt_for_gemini", payload);
+  return result.trim();
+}
+
+/**
+ * Quando a resposta do Gemini não contém FILE: na 1ª/2ª linha, pergunta ao Analista: "Qual o nome deste arquivo?"
+ */
+export async function suggestFilename(content: string): Promise<string> {
+  const result = await groqFetch("suggest_filename", { content });
+  return result.trim().replace(/^["']|["']$/g, "").split("\n")[0].trim() || "index.html";
 }

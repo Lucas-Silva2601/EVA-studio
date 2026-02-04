@@ -309,4 +309,69 @@ EVA-studio/
 
 ---
 
-*Última atualização: Arquitetura simplificada. Agente Único Groq (Analista e Programador). Chat à direita. Sistema de Implementação com um clique (// FILE: + botão Implementar + Diff/Review). Sem extensão Chrome nem AI Studio.*
+## Fase 12 – Loop de Autocura (Self-Healing)
+
+### 12.1 Listener no Terminal/Output
+
+- [ ] Integrar **listener** ao Terminal/Output para capturar erros de execução (stderr, exit codes não zero).
+- [ ] Ao detectar falha na execução do arquivo (Node/Python), disparar gatilho automático.
+
+### 12.2 Gatilho Automático para o Analista
+
+- [ ] Ao detectar erro: enviar **log de erro** + **código do arquivo afetado** para o Analista (Groq) via API (ex.: ação `report_error` ou `autocura`).
+- [ ] O Analista deve analisar o erro e o código e **propor uma correção imediata** (bloco de código com `// FILE: path`).
+
+### 12.3 Botão "Aplicar Autocura"
+
+- [ ] A interface de chat deve destacar a sugestão com: **"🚨 Erro Detectado! EVA sugere esta correção..."**
+- [ ] Exibir botão **"Aplicar Autocura"** que aplica a correção sugerida (abre Diff/Review ou grava diretamente após confirmação).
+
+---
+
+## Fase 13 – Mapa de Arquitetura Dinâmico (Visualização)
+
+### 13.1 Visualizador com Mermaid.js
+
+- [ ] Implementar visualizador de diagramas usando **Mermaid.js** (instalar dependência `mermaid`).
+- [ ] Criar componente (ex.: `ArchitectureMapView` ou aba "Mapa do Projeto") que renderiza diagramas Mermaid em um container seguro.
+
+### 13.2 Geração do Gráfico de Dependências
+
+- [ ] Criar função (no backend ou via Groq) que analisa a **estrutura de pastas e/ou importações/exportações** do projeto e gera um gráfico (ex.: `graph LR; A-->B`).
+- [ ] O Groq pode atuar como parser: recebe a árvore de arquivos (e opcionalmente assinaturas) e retorna **código Mermaid** representando dependências ou estrutura.
+
+### 13.3 Atualização Automática
+
+- [ ] O mapa deve se **atualizar automaticamente** sempre que a IA criar ou deletar um arquivo (ou quando o usuário atualizar a árvore).
+- [ ] Botão ou aba **"Ver Mapa do Projeto"** (na Sidebar ou barra de título) para abrir/fechar o visualizador.
+
+---
+
+## Fase 14 – Modo Gênesis (Automação Multi-Arquivo)
+
+### 14.1 Modo Gênesis (Comando de Alto Nível)
+
+- [ ] Implementar **"Modo Gênesis"**: capacidade de planejar e criar **estruturas completas** de pastas e arquivos a partir de um único comando de alto nível (ex.: "Crie um sistema de login completo").
+- [ ] O Analista, para pedidos complexos, pode responder com um **JSON** contendo a lista de arquivos e seus respectivos conteúdos e caminhos: `{ "files": [ { "path": "...", "content": "..." } ] }`.
+
+### 14.2 Fila de Implementação (UI)
+
+- [ ] Criar a **"Fila de Implementação"**: uma UI que mostra todos os arquivos que a IA planeja criar/alterar para uma funcionalidade complexa.
+- [ ] Lista em formato de checklist: "Arquivos Pendentes de Criação" (path + preview ou nome).
+- [ ] A IDE deve detectar blocos JSON com `files` nas respostas do assistente e popular a fila automaticamente.
+
+### 14.3 Executar Gênesis em Lote
+
+- [ ] Adicionar botão **"Executar Gênesis"** para processar a fila em lote: criar ou sobrescrever cada arquivo na ordem, com confirmação (ex.: Diff/Review por arquivo ou em lote).
+- [ ] Após processar, atualizar a árvore de arquivos e limpar a fila.
+
+---
+
+## Resiliência: Token Continue (já implementado)
+
+- [x] Botão **"Continuar Gerando"** baseado em `finish_reason === 'length'` da API Groq (e detecção de bloco de código aberto).
+- [x] Garante que códigos longos nesses novos modos nunca sejam cortados sem opção de continuar.
+
+---
+
+*Última atualização: Super IDE Autônoma. Fases 12 (Autocura), 13 (Mapa Mermaid), 14 (Modo Gênesis) adicionadas. Token Continue já implementado.*

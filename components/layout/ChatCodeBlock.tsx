@@ -5,10 +5,14 @@ import { parseFilenameFromCodeBlock, stripFilenameComment } from "@/lib/markdown
 export interface ChatCodeBlockProps {
   /** Conteúdo Markdown da mensagem do assistente (pode conter blocos ``` com // FILE:). */
   content: string;
-  /** Chamado ao clicar em "Implementar Mudanças" com (filePath, proposedContent). */
+  /** Chamado ao clicar no botão de ação com (filePath, proposedContent) — um bloco. */
   onImplement: (filePath: string, proposedContent: string) => void;
+  /** Chamado ao clicar em "Implementar" quando há múltiplos arquivos na mensagem (Entrega de Fase). */
+  onImplementAll?: (files: { filePath: string; content: string }[]) => void;
   /** Classe CSS para o container do texto (ex: text-zinc-50). */
   className?: string;
+  /** Rótulo do botão (ex.: "Implementar Mudanças" ou "Aplicar Autocura"). */
+  buttonLabel?: string;
 }
 
 /**
@@ -39,8 +43,19 @@ function parseSegments(content: string): Segment[] {
 /**
  * Renderiza a mensagem do assistente: texto + blocos de código com botão "Implementar Mudanças" quando há // FILE:.
  */
-export function ChatCodeBlock({ content, onImplement, className = "" }: ChatCodeBlockProps) {
+export function ChatCodeBlock({
+  content,
+  onImplement,
+  onImplementAll,
+  className = "",
+  buttonLabel = "Implementar Mudanças",
+}: ChatCodeBlockProps) {
   const segments = parseSegments(content);
+  const codeBlocksWithFile = segments.filter(
+    (s): s is Segment & { type: "code"; filePath: string } =>
+      s.type === "code" && s.filePath != null
+  );
+  const multiFile = onImplementAll != null && codeBlocksWithFile.length >= 2;
 
   return (
     <div className={`whitespace-pre-wrap break-words text-zinc-50 ${className}`}>
@@ -58,21 +73,40 @@ export function ChatCodeBlock({ content, onImplement, className = "" }: ChatCode
             <pre className="p-2 overflow-x-auto text-xs font-mono text-zinc-50 max-h-[280px] overflow-y-auto">
               <code>{seg.raw}</code>
             </pre>
-            {seg.filePath && (
+            {seg.filePath && !multiFile && (
               <div className="px-2 py-1.5 border-t border-vscode-border">
                 <button
                   type="button"
                   onClick={() => onImplement(seg.filePath!, seg.contentWithoutFile)}
                   className="rounded bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-blue-400"
-                  aria-label="Implementar mudanças neste arquivo"
+                  aria-label={buttonLabel}
                 >
-                  Implementar Mudanças
+                  {buttonLabel}
                 </button>
               </div>
             )}
           </div>
         );
       })}
+      {multiFile && codeBlocksWithFile.length > 0 && (
+        <div className="mt-2 px-2 py-1.5 rounded border border-vscode-border bg-vscode-bg/80">
+          <button
+            type="button"
+            onClick={() =>
+              onImplementAll?.(
+                codeBlocksWithFile.map((s) => ({
+                  filePath: s.filePath,
+                  content: s.contentWithoutFile,
+                }))
+              )
+            }
+            className="rounded bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-blue-400"
+            aria-label={buttonLabel}
+          >
+            {buttonLabel} ({codeBlocksWithFile.length} arquivos)
+          </button>
+        </div>
+      )}
     </div>
   );
 }

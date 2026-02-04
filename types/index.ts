@@ -46,9 +46,6 @@ export interface ValidationResult {
 /** Estado do loop de automação (Executar próxima tarefa). */
 export type LoopStatus =
   | "idle"
-  | "analyzing"
-  | "waiting_for_ai_studio"
-  | "saving"
   | "validating"
   | "error"
   | "awaiting_review";
@@ -70,4 +67,6 @@ export interface PendingDiffReview {
   checklistResult: ChecklistAnalysisResult;
   /** true quando a sugestão veio do chat (Implementar); nesse caso não valida checklist. */
   fromChat?: boolean;
+  /** Linhas do checklist a marcar [x] em massa (Entrega de Fase). */
+  phaseLines?: string[];
 }

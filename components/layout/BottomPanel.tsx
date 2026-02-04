@@ -47,9 +47,6 @@ export function BottomPanel() {
 
   const LOOP_STATUS_LABELS: Record<string, string> = {
     idle: "Pronto",
-    analyzing: "Analisando checklist",
-    waiting_for_ai_studio: "Aguardando AI Studio",
-    saving: "Salvando arquivo",
     validating: "Validando",
     error: "Erro",
     awaiting_review: "Aguardando sua revisão",
@@ -131,10 +128,11 @@ export function BottomPanel() {
           id="output-content"
           ref={listRef}
           className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden scrollbar-thin px-3 py-2 font-mono text-sm"
+          style={{ scrollbarWidth: "thin" }}
         >
           {outputMessages.length === 0 ? (
             <p className="text-gray-500 text-sm">
-              Mensagens do fluxo de automação aparecerão aqui (ex.: &quot;Analisando checklist...&quot;, &quot;Aguardando resposta do AI Studio...&quot;).
+              Mensagens do fluxo de automação aparecerão aqui (ex.: &quot;Analisando checklist...&quot;, &quot;Aguardando resposta do Gemini...&quot;).
             </p>
           ) : (
             outputMessages.map((msg) => (

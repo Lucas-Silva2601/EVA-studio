@@ -7,6 +7,7 @@ import { EditorArea } from "@/components/layout/EditorArea";
 import { BottomPanel } from "@/components/layout/BottomPanel";
 import { ChatPanel } from "@/components/layout/ChatPanel";
 import { DiffReviewModal } from "@/components/layout/DiffReviewModal";
+import { GenesisQueuePanel } from "@/components/layout/GenesisQueuePanel";
 
 /**
  * MainLayout: Sidebar esquerda (Explorador) | Editor central + Output (embaixo) | Chat EVA (direita).
@@ -26,6 +27,7 @@ export default function HomePage() {
           <ChatPanel />
         </div>
         <DiffReviewModal />
+        <GenesisQueuePanel />
       </div>
     </IdeStateProvider>
   );

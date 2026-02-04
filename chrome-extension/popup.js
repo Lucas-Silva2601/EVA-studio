@@ -1,0 +1,42 @@
+/**
+ * EVA Bridge v2.0 - Popup: status de conexão IDE (localhost) e aba Gemini.
+ */
+(function () {
+  const STORAGE_KEYS = { IDE_TAB_ID: "eva_ide_tab_id", GEMINI_TAB_ID: "eva_gemini_tab_id" };
+
+  const ideEl = document.getElementById("ide-status");
+  const geminiEl = document.getElementById("gemini-status");
+
+  function setStatus(el, connected) {
+    if (!el) return;
+    el.textContent = connected ? "Online" : "Offline";
+    el.className = "status " + (connected ? "online" : "offline");
+  }
+
+  async function refresh() {
+    const stored = await chrome.storage.local.get([STORAGE_KEYS.IDE_TAB_ID, STORAGE_KEYS.GEMINI_TAB_ID]);
+    const ideTabId = stored[STORAGE_KEYS.IDE_TAB_ID];
+    const geminiTabId = stored[STORAGE_KEYS.GEMINI_TAB_ID];
+
+    let ideOk = false;
+    let geminiOk = false;
+
+    if (ideTabId) {
+      try {
+        const tab = await chrome.tabs.get(ideTabId);
+        ideOk = !!tab && (tab.url?.startsWith("http://localhost:3000") || tab.url?.startsWith("http://127.0.0.1:3000"));
+      } catch (_) {}
+    }
+    if (geminiTabId) {
+      try {
+        const tab = await chrome.tabs.get(geminiTabId);
+        geminiOk = !!tab && tab.url?.includes("gemini.google.com");
+      } catch (_) {}
+    }
+
+    setStatus(ideEl, ideOk);
+    setStatus(geminiEl, geminiOk);
+  }
+
+  refresh();
+})();

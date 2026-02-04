@@ -1,4 +1,4 @@
-import { blocksToFiles, parseCodeBlocksFromMarkdown } from "@/lib/markdownCodeParser";
+import { blocksToFiles, parseCodeBlocksFromMarkdown, parseSingleFileWithFilePrefix, extractFilePathStrict, extractFilePathFromFullText, stripFilenameComment, inferFilenameFromContent } from "@/lib/markdownCodeParser";
 
 /**
  * Protocolo de comunicação IDE ↔ Extensão Chrome (EVA Studio Bridge).
@@ -34,9 +34,6 @@ export type ExtensionMessageHandler = (
   type: ExtensionMessageType,
   payload: ExtensionMessagePayload
 ) => void;
-
-const EVA_EXTENSION_NOT_DETECTED_MSG =
-  "A extensão EVA Bridge não respondeu nesta página. Abra a IDE em http://localhost:3000 ou http://127.0.0.1:3000 em uma aba normal do Chrome ou Edge (não use pré-visualização embutida), tenha a aba do Google AI Studio aberta e recarregue a página.";
 
 /**
  * Envia o prompt à extensão Chrome (content script na página da IDE repassa ao background).
@@ -98,11 +95,11 @@ export function onExtensionMessage(
   return () => window.removeEventListener("message", listener);
 }
 
-const PING_TIMEOUT_MS = 2000;
+const PING_TIMEOUT_MS = 10000;
 
 /**
  * Envia EVA_PING para a extensão. Se o content script estiver na página, responde EVA_PONG.
- * Use para detectar se a extensão está ativa NESTA aba (localhost:3000 ou 127.0.0.1:3000).
+ * Timeout de 10s para evitar "Extensão não detectada" enquanto o Gemini está gerando.
  */
 export function pingExtension(): Promise<boolean> {
   return new Promise((resolve) => {
@@ -112,7 +109,7 @@ export function pingExtension(): Promise<boolean> {
     }
     const timer = setTimeout(() => {
       unsubscribe();
-      console.warn("[IDE -> EXT] EVA_PING sem EVA_PONG em 2s — extensão não está ativa nesta página.");
+      console.warn("[IDE -> EXT] EVA_PING sem EVA_PONG em 10s — extensão não está ativa nesta página.");
       resolve(false);
     }, PING_TIMEOUT_MS);
 
@@ -135,6 +132,26 @@ export function pingExtension(): Promise<boolean> {
   });
 }
 
+/** Número de tentativas de reconexão (Ping) antes de dar erro no Output. */
+const RECONNECT_PING_ATTEMPTS = 2;
+
+/**
+ * Verifica se a extensão está conectada; se não, tenta reconexão automática (até RECONNECT_PING_ATTEMPTS Pings).
+ * Só chama onExtensionNotDetected após esgotar as tentativas.
+ */
+export async function pingExtensionWithReconnect(onExtensionNotDetected?: () => void): Promise<boolean> {
+  for (let attempt = 1; attempt <= RECONNECT_PING_ATTEMPTS; attempt++) {
+    const ok = await pingExtension();
+    if (ok) return true;
+    if (attempt < RECONNECT_PING_ATTEMPTS) {
+      console.log("[IDE -> EXT] Reconexão automática: disparando novo Ping...");
+      await new Promise((r) => setTimeout(r, 500));
+    }
+  }
+  onExtensionNotDetected?.();
+  return false;
+}
+
 export interface WaitForCodeResult {
   ok: true;
   code: string;
@@ -149,26 +166,60 @@ export interface WaitForCodeError {
   error: string;
 }
 
+/** Nome sentinela quando FILE: não foi encontrado na 1ª/2ª linha; a IDE deve perguntar ao Groq antes de salvar. */
+export const FILENAME_ASK_GROQ = "__ASK_GROQ__";
+
 /**
- * Normaliza o payload da extensão para lista de arquivos (usa parser se blocks/code).
+ * Extrai nome de arquivo da resposta do Gemini: regex /FILE:\s*([a-zA-Z0-9._\-\/]+)/i em TODO o texto.
+ * Se encontrar FILE: index.html (ou qualquer extensão), a IDE DEVE usar esse nome.
+ * Se não encontrar, retorna null → IDE usa FILENAME_ASK_GROQ e pausa para pedir nome (Groq ou usuário) antes de salvar.
+ */
+function extractFileNameFromGeminiResponse(rawCode: string): string | null {
+  const path = extractFilePathFromFullText(rawCode) ?? extractFilePathStrict(rawCode);
+  return path ?? null;
+}
+
+/**
+ * Normaliza o payload da extensão para lista de arquivos.
+ * Regra: FILE: em todo o texto ou em blocos markdown → usa esse nome. Se não encontrar, pausa com FILENAME_ASK_GROQ (pedir nome antes de salvar).
  */
 function normalizeToFiles(p: CodeResponsePayload): Array<{ name: string; content: string }> {
   if (p.files && p.files.length > 0) return p.files;
   if (p.blocks && p.blocks.length > 0) return blocksToFiles(p.blocks);
   const rawCode = (p.code ?? "").trim();
   if (!rawCode) return [];
+  const singleWithPrefix = parseSingleFileWithFilePrefix(rawCode);
+  if (singleWithPrefix) return [singleWithPrefix];
   const fromMarkdown = parseCodeBlocksFromMarkdown(rawCode);
-  if (fromMarkdown.length > 0) return fromMarkdown;
-  const name = p.filename?.trim() || "generated";
-  return [{ name, content: rawCode }];
+  const fileFromText = extractFileNameFromGeminiResponse(rawCode);
+  if (fromMarkdown.length > 0) {
+    if (fileFromText && fromMarkdown.length === 1) {
+      const content = stripFilenameComment(fromMarkdown[0].content);
+      return [{ name: fileFromText, content }];
+    }
+    const hasFilePrefix = /FILE\s*:/i.test(rawCode);
+    if (hasFilePrefix && fromMarkdown.length === 1) {
+      const strictPath = extractFilePathStrict(rawCode);
+      if (strictPath) {
+        const content = stripFilenameComment(fromMarkdown[0].content);
+        return [{ name: strictPath, content }];
+      }
+    }
+    return fromMarkdown;
+  }
+  const strictPath = fileFromText ?? extractFilePathStrict(rawCode);
+  const inferred = inferFilenameFromContent(rawCode);
+  const name = strictPath ?? p.filename?.trim() ?? inferred ?? FILENAME_ASK_GROQ;
+  const content = strictPath || inferred ? stripFilenameComment(rawCode) : rawCode;
+  return [{ name, content }];
 }
 
-const EXTENSION_HANDSHAKE_MS = 5000;
+const EXTENSION_HANDSHAKE_MS = 10000;
 
 /**
  * Envia o prompt à extensão e aguarda CODE_RESPONSE ou ERROR até o timeout.
  * Timeout em ms (padrão 120000 = 2 min).
- * Se a extensão não responder em 5s, chama onExtensionNotDetected (feedback imediato no OUTPUT).
+ * Handshake: 10s sem resposta dispara tentativa de reconexão (Ping); só chama onExtensionNotDetected após falha.
  * Fase 10: retorna files[] quando há múltiplos arquivos; senão code/filename (retrocompat).
  */
 export function waitForCodeFromExtension(
@@ -183,10 +234,13 @@ export function waitForCodeFromExtension(
     }
 
     let resolved = false;
-    const handshakeTimer = setTimeout(() => {
+    const handshakeTimer = setTimeout(async () => {
       if (resolved) return;
-      console.warn("[IDE -> EXT] 5s sem resposta da extensão — possivelmente EVA Bridge não detectada.");
-      onExtensionNotDetected?.();
+      console.warn("[IDE -> EXT] 10s sem resposta — tentando reconexão automática (Ping)...");
+      const reconnected = await pingExtensionWithReconnect(onExtensionNotDetected);
+      if (!reconnected && !resolved) {
+        console.warn("[IDE -> EXT] Reconexão falhou; extensão não detectada.");
+      }
     }, EXTENSION_HANDSHAKE_MS);
 
     const timer = setTimeout(() => {
@@ -194,7 +248,7 @@ export function waitForCodeFromExtension(
       resolved = true;
       clearTimeout(handshakeTimer);
       unsubscribe();
-      resolve({ ok: false, error: `Timeout: extensão não respondeu em ${timeoutMs / 1000}s. Verifique se o AI Studio está aberto e a extensão instalada.` });
+      resolve({ ok: false, error: `Timeout: extensão não respondeu em ${timeoutMs / 1000}s. Verifique se o Gemini (gemini.google.com) está aberto e a extensão instalada.` });
     }, timeoutMs);
 
     const unsubscribe = onExtensionMessage((type, payload) => {
@@ -223,5 +277,3 @@ export function waitForCodeFromExtension(
     sendPromptToExtension(prompt);
   });
 }
-
-export { EVA_EXTENSION_NOT_DETECTED_MSG };

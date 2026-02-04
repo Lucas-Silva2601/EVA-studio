@@ -99,3 +99,63 @@ export async function verifyDirectoryPermission(
     return false;
   }
 }
+
+/** Mensagem do chat (persistida por projeto). */
+export interface StoredChatMessage {
+  role: "user" | "assistant";
+  content: string;
+  isTruncated?: boolean;
+  isAutocura?: boolean;
+}
+
+function chatKey(projectId: string): string {
+  const safe = projectId.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 100) || "default";
+  return `chat_${safe}`;
+}
+
+/** Salva o histórico do chat do projeto (para identificar conversa por projeto). */
+export async function saveChatMessages(
+  projectId: string,
+  messages: StoredChatMessage[]
+): Promise<void> {
+  if (typeof indexedDB === "undefined") return;
+  try {
+    const db = await openDB();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, "readwrite");
+      const store = tx.objectStore(STORE_NAME);
+      store.put(messages, chatKey(projectId));
+      tx.oncomplete = () => {
+        db.close();
+        resolve();
+      };
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch {
+    // ignore
+  }
+}
+
+/** Carrega o histórico do chat do projeto. */
+export async function getChatMessages(projectId: string): Promise<StoredChatMessage[]> {
+  if (typeof indexedDB === "undefined") return [];
+  try {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, "readonly");
+      const store = tx.objectStore(STORE_NAME);
+      const req = store.get(chatKey(projectId));
+      req.onerror = () => {
+        db.close();
+        reject(req.error);
+      };
+      req.onsuccess = () => {
+        db.close();
+        const raw = req.result;
+        resolve(Array.isArray(raw) ? raw : []);
+      };
+    });
+  } catch {
+    return [];
+  }
+}

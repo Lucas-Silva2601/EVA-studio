@@ -8,8 +8,74 @@ export interface ParsedCodeFile {
   content: string;
 }
 
-/** Regex para comentário de filename na primeira linha: // filename: path ou // FILE: path ou # filename: path ou <!-- filename: path --> */
-const FILENAME_COMMENT_REGEX = /^\s*(?:\/\/|#|<!--)\s*(?:filename|FILE)\s*:\s*([^\s\n]+)(?:\s*-->)?/im;
+/** Regex rigoroso: FILE: ou // FILE: seguido de caminho/nome.ext (evita fallback para file_0.txt). */
+const FILENAME_COMMENT_REGEX = /^\s*(?:\/\/|#|<!--)?\s*(?:filename|FILE)\s*:\s*([^\s\n]+)(?:\s*-->)?/im;
+
+/** Regex robusto: FILE: path em qualquer lugar do texto (apenas caracteres seguros para nome de arquivo). */
+export const FILE_PATH_FULL_TEXT_REGEX = /FILE:\s*([a-zA-Z0-9._\-/]+)/gi;
+
+/** Extrai path procurando FILE: em TODO o texto (primeira ocorrência). Evita arquivos .txt genéricos. */
+export function extractFilePathFromFullText(text: string): string | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  const match = trimmed.match(FILE_PATH_FULL_TEXT_REGEX);
+  if (match && match[0]) {
+    const first = match[0];
+    const pathMatch = first.match(/FILE:\s*([a-zA-Z0-9._\-/]+)/i);
+    if (pathMatch) return pathMatch[1].trim();
+  }
+  return null;
+}
+
+/** Regex robusto para primeira/segunda linha: FILE: path (apenas caracteres seguros para nome de arquivo). */
+export const FILE_PATH_FIRST_LINES_REGEX = /FILE:\s*([a-zA-Z0-9._\-/]+)/i;
+
+/** Extrai path da primeira ou segunda linha com FILE: (ex.: FILE: index.html). Usado pelo listener da extensão. */
+export function extractFilePathFromFirstTwoLines(text: string): string | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  const lines = trimmed.split(/\r?\n/);
+  for (let i = 0; i < Math.min(lines.length, 2); i++) {
+    const line = lines[i] ?? "";
+    const match = line.match(FILE_PATH_FIRST_LINES_REGEX);
+    if (match) return match[1].trim();
+  }
+  return null;
+}
+
+/** Procura FILE: em todo o texto primeiro; depois nas primeiras linhas (resposta completa do Gemini). */
+export function extractFilePathStrict(text: string): string | null {
+  const fromFull = extractFilePathFromFullText(text);
+  if (fromFull) return fromFull;
+  const fromFirstTwo = extractFilePathFromFirstTwoLines(text);
+  if (fromFirstTwo) return fromFirstTwo;
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  const lines = trimmed.split(/\r?\n/);
+  for (let i = 0; i < Math.min(lines.length, 5); i++) {
+    const line = lines[i]?.trim() ?? "";
+    const match = line.match(/^(?:\/\/\s*)?FILE\s*:\s*(.+)$/i);
+    if (match) return match[1].trim();
+  }
+  return null;
+}
+
+/**
+ * Infere nome de arquivo com extensão correta a partir do conteúdo (evita file_0.txt).
+ * HTML → index.html; JS/TS → script.js ou app.js; CSS → style.css; etc.
+ */
+export function inferFilenameFromContent(content: string): string | null {
+  const trimmed = content.trim();
+  if (!trimmed) return null;
+  const first = trimmed.slice(0, 200).toLowerCase();
+  if (first.includes("<!doctype") || first.startsWith("<html") || first.startsWith("<!DOCTYPE")) return "index.html";
+  if (first.includes("<style") || (first.includes("{") && first.includes(":")) && first.includes("px") && !first.includes("function")) return "style.css";
+  if (first.includes("import react") || first.includes("from \"react\"") || first.includes("from 'react'")) return "App.jsx";
+  if (first.includes("function ") || first.includes("const ") && first.includes("=>") || first.includes("export ")) return "script.js";
+  if (first.includes("def ") || first.includes("import ")) return "script.py";
+  if (first.startsWith("{") || first.startsWith("[")) return "data.json";
+  return null;
+}
 
 /**
  * Extrai o nome do arquivo da primeira linha do bloco (convenção do projeto).
@@ -34,11 +100,28 @@ export function stripFilenameComment(content: string): string {
 }
 
 /**
+ * Se o texto não tiver blocos ``` mas começar com FILE: ou // FILE: na primeira linha,
+ * trata como um único arquivo (formato retornado pelo Gemini).
+ */
+export function parseSingleFileWithFilePrefix(text: string): ParsedCodeFile | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  const firstLine = trimmed.split("\n")[0]?.trim() ?? "";
+  const pathMatch = firstLine.match(FILENAME_COMMENT_REGEX);
+  if (!pathMatch) return null;
+  const name = pathMatch[1].trim();
+  const content = stripFilenameComment(trimmed);
+  return { name, content };
+}
+
+/**
  * Extrai múltiplos blocos de código de um texto Markdown.
  * - Blocos cercados por ``` (info string opcional: lang ou lang:filename)
  * - Nome do arquivo: info string "lang:path" ou primeira linha do bloco (// filename: X)
  */
 export function parseCodeBlocksFromMarkdown(text: string): ParsedCodeFile[] {
+  const single = parseSingleFileWithFilePrefix(text);
+  if (single) return [single];
   const result: ParsedCodeFile[] = [];
   // Regex: opening fence ``` optional info, then content until closing ```
   const fenceRegex = /^```(\w*)(?::([^\s\n]+))?\s*\n([\s\S]*?)\n```/gm;
@@ -57,8 +140,10 @@ export function parseCodeBlocksFromMarkdown(text: string): ParsedCodeFile[] {
       name = fromComment;
       content = stripFilenameComment(content);
     } else {
+      const fallback = extractFilePathStrict(content) ?? inferFilenameFromContent(content);
       const ext = langToExt(infoLang);
-      name = `file_${index}.${ext}`;
+      name = fallback ?? (ext ? `file_${index}.${ext}` : `file_${index}`);
+      content = stripFilenameComment(content);
       index++;
     }
     result.push({ name, content });
@@ -68,20 +153,23 @@ export function parseCodeBlocksFromMarkdown(text: string): ParsedCodeFile[] {
 
 /**
  * Processa um array de blocos brutos (code + language) e atribui nome a cada um.
- * Usado quando a extensão envia blocks sem filename; tenta extrair da primeira linha.
+ * Sempre tenta extrair FILE: da primeira linha; nunca usa file_N.txt se houver FILE: no bloco.
  */
 export function blocksToFiles(
   blocks: Array<{ code: string; language?: string }>
 ): ParsedCodeFile[] {
   return blocks.map((block, i) => {
-    const nameFromComment = parseFilenameFromCodeBlock(block.code);
-    const name = nameFromComment ?? `file_${i}.${langToExt(block.language ?? "")}`;
+    const nameFromComment = parseFilenameFromCodeBlock(block.code) ?? extractFilePathStrict(block.code) ?? inferFilenameFromContent(block.code);
+    const lang = block.language ?? "";
+    const ext = langToExt(lang);
+    const name = nameFromComment ?? (ext ? `file_${i}.${ext}` : `file_${i}`);
     const content = nameFromComment ? stripFilenameComment(block.code) : block.code.trim();
     return { name, content };
   });
 }
 
 function langToExt(lang: string): string {
+  if (!lang.trim()) return "";
   const map: Record<string, string> = {
     js: "js",
     javascript: "js",
@@ -96,5 +184,5 @@ function langToExt(lang: string): string {
     json: "json",
     md: "md",
   };
-  return map[lang.toLowerCase()] ?? "txt";
+  return map[lang.toLowerCase()] ?? "";
 }

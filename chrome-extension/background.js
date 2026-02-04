@@ -1,11 +1,14 @@
 /**
- * EVA Studio Bridge - Background Service Worker (Manifest V3)
- * Roteia mensagens entre a aba da IDE (localhost:3000) e a aba do Google AI Studio.
- * Usa apenas APIs chrome.* (sem window/document).
+ * EVA Studio Bridge v2.0 - Background Service Worker (Manifest V3)
+ * Roteia mensagens entre a aba da IDE (localhost:3000) e a aba do Google Gemini (gemini.google.com).
+ * Protocolo: EVA_PROMPT_SEND (IDE -> Extensão), EVA_CODE_RETURNED (Extensão -> IDE).
  */
-console.log("EVA Bridge Service Worker Ativo");
+console.log("EVA Bridge v2.0 Service Worker Ativo");
 
-const STORAGE_KEYS = { IDE_TAB_ID: "eva_ide_tab_id", AI_STUDIO_TAB_ID: "eva_ai_studio_tab_id" };
+const STORAGE_KEYS = {
+  IDE_TAB_ID: "eva_ide_tab_id",
+  GEMINI_TAB_ID: "eva_gemini_tab_id",
+};
 
 async function getIdeTabId() {
   const out = await chrome.storage.local.get(STORAGE_KEYS.IDE_TAB_ID);
@@ -16,13 +19,13 @@ function setIdeTabId(tabId) {
   return chrome.storage.local.set({ [STORAGE_KEYS.IDE_TAB_ID]: tabId });
 }
 
-async function getAiStudioTabId() {
-  const out = await chrome.storage.local.get(STORAGE_KEYS.AI_STUDIO_TAB_ID);
-  return out[STORAGE_KEYS.AI_STUDIO_TAB_ID];
+async function getGeminiTabId() {
+  const out = await chrome.storage.local.get(STORAGE_KEYS.GEMINI_TAB_ID);
+  return out[STORAGE_KEYS.GEMINI_TAB_ID];
 }
 
-function setAiStudioTabId(tabId) {
-  return chrome.storage.local.set({ [STORAGE_KEYS.AI_STUDIO_TAB_ID]: tabId });
+function setGeminiTabId(tabId) {
+  return chrome.storage.local.set({ [STORAGE_KEYS.GEMINI_TAB_ID]: tabId });
 }
 
 function sendCodeReturnedToIde(payload) {
@@ -32,43 +35,43 @@ function sendCodeReturnedToIde(payload) {
   });
 }
 
+// Mensagens da IDE (content-ide.js)
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.source !== "eva-content-ide") return false;
   const { type, payload } = message;
 
   if (type === "REGISTER_IDE_TAB") {
-    console.log("[BACKGROUND] Aba da IDE registrada:", sender.tab?.id);
+    console.log("[EVA Bridge] Aba da IDE registrada:", sender.tab?.id);
     setIdeTabId(sender.tab?.id).then(() => sendResponse({ ok: true }));
     return true;
   }
 
   if (type === "EVA_PROMPT_SEND") {
-    console.log("[BACKGROUND] Recebi do Content-IDE, procurando aba do AI Studio...");
-    getAiStudioTabId().then(async (aiTabId) => {
-      let tabIdToUse = aiTabId;
+    console.log("[EVA Bridge] EVA_PROMPT_SEND recebido, procurando aba do Gemini...");
+    getGeminiTabId().then(async (geminiTabId) => {
+      let tabIdToUse = geminiTabId;
       if (!tabIdToUse) {
-        const tabs = await chrome.tabs.query({ url: "*://aistudio.google.com/*" });
-        console.log("[EVA DEBUG] Abas encontradas:", tabs.length);
+        const tabs = await chrome.tabs.query({ url: "*://gemini.google.com/*" });
         if (tabs.length > 0) {
           tabIdToUse = tabs[0].id;
-          await setAiStudioTabId(tabIdToUse);
-          console.log("[BACKGROUND] Aba do AI Studio descoberta e registrada:", tabIdToUse);
+          await setGeminiTabId(tabIdToUse);
+          console.log("[EVA Bridge] Aba do Gemini descoberta e registrada:", tabIdToUse);
         }
       }
       if (!tabIdToUse) {
-        console.warn("[BACKGROUND] AI Studio tab não registrada e nenhuma aba encontrada.");
-        sendCodeReturnedToIde({ error: "Abra o Google AI Studio em uma aba primeiro." });
+        console.warn("[EVA Bridge] Nenhuma aba do Gemini encontrada.");
+        sendCodeReturnedToIde({ error: "Abra o Google Gemini (gemini.google.com) em uma aba primeiro." });
         sendResponse({ ok: false });
         return;
       }
       chrome.tabs.sendMessage(tabIdToUse, { type: "EVA_PROMPT_INJECT", payload: { prompt: payload?.prompt ?? "" } })
         .then(() => {
-          console.log("[BACKGROUND] EVA_PROMPT_INJECT enviado com sucesso para a aba do AI Studio.");
+          console.log("[EVA Bridge] EVA_PROMPT_INJECT enviado ao Gemini.");
           sendResponse({ ok: true });
         })
         .catch((err) => {
-          console.warn("[BACKGROUND] Falha ao enviar para AI Studio.", err?.message || err);
-          sendCodeReturnedToIde({ error: "Aba do AI Studio fechada ou indisponível. Mantenha a aba do Google AI Studio aberta." });
+          console.warn("[EVA Bridge] Falha ao enviar ao Gemini.", err?.message || err);
+          sendCodeReturnedToIde({ error: "Aba do Gemini fechada ou indisponível. Mantenha gemini.google.com aberto." });
           sendResponse({ ok: false });
         });
     });
@@ -77,25 +80,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return false;
 });
 
+// Mensagens do Gemini (content-gemini.js)
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.source !== "eva-content-ai-studio") return false;
+  if (message.source !== "eva-content-gemini") return false;
   const { type, payload } = message;
 
-  if (type === "REGISTER_AI_STUDIO_TAB") {
-    console.log("[BACKGROUND] Aba do AI Studio registrada:", sender.tab?.id);
-    setAiStudioTabId(sender.tab?.id).then(() => sendResponse({ ok: true }));
+  if (type === "REGISTER_GEMINI_TAB") {
+    console.log("[EVA Bridge] Aba do Gemini registrada:", sender.tab?.id);
+    setGeminiTabId(sender.tab?.id).then(() => sendResponse({ ok: true }));
     return true;
   }
 
   if (type === "EVA_CODE_CAPTURED") {
-    console.log("[BACKGROUND] EVA_CODE_CAPTURED recebido do Content-AI, repassando à IDE.");
+    console.log("[EVA Bridge] EVA_CODE_CAPTURED recebido do Gemini, repassando à IDE.");
     sendCodeReturnedToIde(payload ?? {});
     sendResponse({ ok: true });
     return true;
   }
 
   if (type === "EVA_ERROR") {
-    sendCodeReturnedToIde({ error: payload?.message ?? "Erro no AI Studio." });
+    sendCodeReturnedToIde({ error: payload?.message ?? "Erro no Gemini." });
     sendResponse({ ok: true });
     return true;
   }
