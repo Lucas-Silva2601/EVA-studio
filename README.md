@@ -101,6 +101,7 @@ Se não existir `checklist.md`, a IDE cria um arquivo inicial ao abrir a pasta.
 EVA-studio/
 ├── checklist.md           # Controle do projeto (este repositório)
 ├── README.md              # Este arquivo
+├── docs/                  # Documentação de melhorias em fases (checklists)
 ├── .env.example           # Exemplo de variáveis (GROQ_API_KEY)
 ├── .env.local             # Sua chave Groq (não versionado)
 ├── app/
@@ -124,7 +125,7 @@ EVA-studio/
 
 - **Fluxo completo**: rode a IDE em localhost, abra uma pasta com `checklist.md`, tenha a extensão instalada e o AI Studio aberto; use **Executar loop** e acompanhe o Output.
 - **Checklist real**: teste com múltiplas tarefas e tipos de arquivo (React, Python, etc.).
-- **Extensão e AI Studio**: se a interface do Google AI Studio mudar, os seletores em `chrome-extension/content-ai-studio.js` podem precisar ser atualizados (instruções no próprio arquivo e em `chrome-extension/README.md`).
+- **Extensão e AI Studio**: se a interface do Google AI Studio mudar, os seletores em `chrome-extension/content-gemini.js` podem precisar ser atualizados (instruções no próprio arquivo e em `chrome-extension/README.md`).
 - **Aba do AI Studio fechada**: se o usuário fechar a aba do AI Studio durante o loop, a extensão envia um erro à IDE para que o estado não fique apenas em timeout.
 
 ## Licença
