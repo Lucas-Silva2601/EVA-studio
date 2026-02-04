@@ -71,6 +71,7 @@ export function onExtensionMessage(
       handler("CODE_RESPONSE", { _connected: true } as ExtensionMessagePayload);
       return;
     }
+    // Validação de origem: ignorar mensagens de outros origins (segurança).
     if (typeof window !== "undefined" && event.origin !== window.location.origin) return;
     if (data?.type !== "EVA_STUDIO_TO_PAGE" || !data.payload) return;
 

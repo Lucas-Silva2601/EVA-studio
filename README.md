@@ -126,10 +126,15 @@ EVA-studio/
 
 ## Testes e robustez
 
+- **Testes unitários**: `npm run test` (Vitest; cobre funções em `lib/`, ex.: `lib/sanitize.test.ts`). Ver `docs/05-fase-qualidade-e-manutencao.md` para estratégia de testes.
 - **Fluxo completo**: rode a IDE em localhost, abra uma pasta com `checklist.md`, tenha a extensão instalada e o AI Studio aberto; use **Executar loop** e acompanhe o Output.
 - **Checklist real**: teste com múltiplas tarefas e tipos de arquivo (React, Python, etc.).
 - **Extensão e AI Studio**: se a interface do Google AI Studio mudar, os seletores em `chrome-extension/content-gemini.js` podem precisar ser atualizados (instruções no próprio arquivo e em `chrome-extension/README.md`).
 - **Aba do AI Studio fechada**: se o usuário fechar a aba do AI Studio durante o loop, a extensão envia um erro à IDE para que o estado não fique apenas em timeout.
+
+## Documentação
+
+- **Melhorias em fases**: checklists de arquitetura, design, funcionalidade e qualidade em [`docs/`](docs/00-INDICE.md) (índice em `docs/00-INDICE.md`).
 
 ## Licença
 

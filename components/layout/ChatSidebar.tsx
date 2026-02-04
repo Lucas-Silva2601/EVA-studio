@@ -755,7 +755,7 @@ export function ChatSidebar() {
           <div className="rounded-md px-2 py-2 bg-amber-900/30 border border-amber-600/50 text-amber-200 text-xs mr-4">
             <div className="flex items-center gap-2 mb-1.5">
               <AlertTriangle className="w-4 h-4 shrink-0 text-amber-400" aria-hidden />
-              <span className="font-medium">A IA atingiu o limite de tokens. Clique em Continuar para completar o código antes de avançar.</span>
+              <span className="font-medium">Resposta truncada. A IA atingiu o limite de tokens. Clique em Continuar para completar o código antes de avançar.</span>
             </div>
             <button
               type="button"
