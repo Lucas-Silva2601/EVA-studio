@@ -177,13 +177,25 @@
     const trimmed = (code || "").trim();
     if (!trimmed) return null;
     const first = trimmed.slice(0, 300).toLowerCase();
-    if (first.includes("<!doctype") || first.startsWith("<html") || first.startsWith("<!DOCTYPE")) return "index.html";
-    if (first.includes("<style") || (first.includes("{") && first.includes(":") && first.includes("px") && !first.includes("function")) return "style.css";
-    if (first.includes("import react") || first.includes('from "react"') || first.includes("from 'react'")) return "App.jsx";
-    if (first.includes("function ") || (first.includes("const ") && first.includes("=>")) || first.includes("export ")) return "script.js";
-    if (first.includes("def ") || (first.includes("import ") && !first.includes("react"))) return "script.py";
+    if (first.includes("<!doctype") || first.startsWith("<html") || first.startsWith("<!DOCTYPE")) {
+      return "index.html";
+    }
+    const isCss = first.includes("<style") ||
+      (first.includes("{") && first.includes(":") && first.includes("px") && !first.includes("function"));
+    if (isCss) return "style.css";
+    if (first.includes("import react") || first.includes('from "react"') || first.includes("from 'react'")) {
+      return "App.jsx";
+    }
+    if (first.includes("function ") || (first.includes("const ") && first.includes("=>")) || first.includes("export ")) {
+      return "script.js";
+    }
+    if (first.includes("def ") || (first.includes("import ") && !first.includes("react"))) {
+      return "script.py";
+    }
     if (first.startsWith("{") || first.startsWith("[")) return "data.json";
-    if (first.startsWith("# ") || first.includes("## ") || first.includes("- [ ]") || first.includes("- [x]")) return "checklist.md";
+    if (first.startsWith("# ") || first.includes("## ") || first.includes("- [ ]") || first.includes("- [x]")) {
+      return "checklist.md";
+    }
     return null;
   }
 
