@@ -59,7 +59,7 @@ export function DiffReviewModal() {
       <div
         ref={dialogRef}
         tabIndex={-1}
-        className="flex flex-col w-full max-w-4xl max-h-[85vh] rounded-lg bg-vscode-sidebar border border-vscode-border shadow-xl overflow-hidden outline-none focus:outline-none focus:ring-2 focus:ring-vscode-accent focus:ring-inset"
+        className="flex flex-col w-full max-w-4xl max-h-[85vh] rounded-lg bg-vscode-sidebar border border-vscode-border shadow-xl overflow-hidden outline-none focus:outline-none focus-visible:ring-2 focus-visible:ring-vscode-accent focus-visible:ring-inset"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="shrink-0 px-4 py-3 border-b border-vscode-border bg-vscode-titlebar/80">
@@ -91,7 +91,7 @@ export function DiffReviewModal() {
                         <label className="text-xs text-gray-400 mb-1">Conteúdo (editável)</label>
                         {isEditing ? (
                           <textarea
-                            className="flex-1 min-h-[120px] px-2 py-1.5 font-mono text-sm bg-vscode-bg text-gray-200 border border-vscode-border rounded resize-y focus:outline-none focus:ring-1 focus:ring-vscode-accent"
+                            className="flex-1 min-h-[120px] px-2 py-1.5 font-mono text-sm bg-vscode-bg text-gray-200 border border-vscode-border rounded resize-y focus:outline-none focus-visible:ring-1 focus-visible:ring-vscode-accent disabled:opacity-50 disabled:cursor-not-allowed invalid:border-red-500"
                             value={file.afterContent}
                             onChange={(e) => updatePendingDiffContent(file.filePath, e.target.value)}
                             spellCheck={false}
@@ -105,8 +105,9 @@ export function DiffReviewModal() {
                           type="button"
                           className="mt-1 flex items-center gap-1 text-xs text-gray-400 hover:text-gray-200"
                           onClick={() => setEditingPath(isEditing ? null : file.filePath)}
+                          aria-label={isEditing ? "Sair da edição do conteúdo" : "Editar conteúdo do arquivo"}
                         >
-                          <Edit3 className="w-3 h-3" /> {isEditing ? "Sair da edição" : "Editar"}
+                          <Edit3 className="w-3 h-3" aria-hidden /> {isEditing ? "Sair da edição" : "Editar"}
                         </button>
                       </div>
                     ) : (
@@ -121,7 +122,7 @@ export function DiffReviewModal() {
                           <span className="text-xs text-gray-400">Depois</span>
                           {isEditing ? (
                             <textarea
-                              className="mt-1 w-full min-h-[120px] px-2 py-1.5 font-mono text-sm bg-vscode-bg text-gray-200 border border-vscode-border rounded resize-y focus:outline-none focus:ring-1 focus:ring-vscode-accent"
+                              className="mt-1 w-full min-h-[120px] px-2 py-1.5 font-mono text-sm bg-vscode-bg text-gray-200 border border-vscode-border rounded resize-y focus:outline-none focus-visible:ring-1 focus-visible:ring-vscode-accent disabled:opacity-50 disabled:cursor-not-allowed invalid:border-red-500"
                               value={file.afterContent}
                               onChange={(e) => updatePendingDiffContent(file.filePath, e.target.value)}
                               spellCheck={false}
@@ -135,8 +136,9 @@ export function DiffReviewModal() {
                             type="button"
                             className="mt-1 flex items-center gap-1 text-xs text-gray-400 hover:text-gray-200"
                             onClick={() => setEditingPath(isEditing ? null : file.filePath)}
+                            aria-label={isEditing ? "Sair da edição do conteúdo" : "Editar conteúdo do arquivo"}
                           >
-                            <Edit3 className="w-3 h-3" /> {isEditing ? "Sair da edição" : "Editar"}
+                            <Edit3 className="w-3 h-3" aria-hidden /> {isEditing ? "Sair da edição" : "Editar"}
                           </button>
                         </div>
                       </>
@@ -151,7 +153,7 @@ export function DiffReviewModal() {
           <button
             type="button"
             onClick={handleReject}
-            className="flex items-center gap-2 px-3 py-1.5 rounded text-sm bg-red-900/40 hover:bg-red-900/60 text-red-300 focus:outline-none focus:ring-1 focus:ring-red-500"
+            className="flex items-center gap-2 px-3 py-1.5 rounded text-sm bg-red-900/40 hover:bg-red-900/60 text-red-300 focus:outline-none focus-visible:ring-1 focus-visible:ring-red-500"
             aria-label="Rejeitar todas as alterações"
           >
             <X className="w-4 h-4" aria-hidden />
@@ -160,7 +162,7 @@ export function DiffReviewModal() {
           <button
             type="button"
             onClick={handleAccept}
-            className="flex items-center gap-2 px-3 py-1.5 rounded text-sm bg-green-900/40 hover:bg-green-900/60 text-green-300 focus:outline-none focus:ring-1 focus:ring-green-500"
+            className="flex items-center gap-2 px-3 py-1.5 rounded text-sm bg-green-900/40 hover:bg-green-900/60 text-green-300 focus:outline-none focus-visible:ring-1 focus-visible:ring-green-500"
             aria-label="Aceitar e gravar todos no disco"
           >
             <Check className="w-4 h-4" aria-hidden />

@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect } from "react";
-import { X, Save } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { X, Save, Check } from "lucide-react";
 import { useIdeState } from "@/hooks/useIdeState";
 import { MonacoWrapper } from "@/components/editor/MonacoWrapper";
 
@@ -18,18 +18,30 @@ export function EditorArea() {
     saveCurrentFile,
   } = useIdeState();
 
+  const activeFile = openFiles.find((f) => f.path === activeFilePath);
+  const [savedFeedback, setSavedFeedback] = useState(false);
+
+  const handleSave = useCallback(async () => {
+    await saveCurrentFile();
+    setSavedFeedback(true);
+  }, [saveCurrentFile]);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === "s") {
         e.preventDefault();
-        saveCurrentFile();
+        handleSave();
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [saveCurrentFile]);
+  }, [handleSave]);
 
-  const activeFile = openFiles.find((f) => f.path === activeFilePath);
+  useEffect(() => {
+    if (!savedFeedback) return;
+    const t = setTimeout(() => setSavedFeedback(false), 1500);
+    return () => clearTimeout(t);
+  }, [savedFeedback]);
 
   const handleContentChange = useCallback(
     (path: string, value: string) => {
@@ -85,7 +97,7 @@ export function EditorArea() {
                   e.stopPropagation();
                   closeFile(file.path);
                 }}
-                className="p-0.5 rounded hover:bg-white/10 focus:outline-none focus:ring-1 focus:ring-vscode-accent opacity-70 group-hover:opacity-100"
+                className="p-0.5 rounded hover:bg-white/10 focus:outline-none focus-visible:ring-1 focus-visible:ring-vscode-accent opacity-70 group-hover:opacity-100"
                 aria-label={`Fechar ${file.name}`}
               >
                 <X className="w-3.5 h-3.5" aria-hidden />
@@ -96,13 +108,17 @@ export function EditorArea() {
         </div>
         <button
           type="button"
-          onClick={() => saveCurrentFile()}
-          className="flex items-center gap-2 px-3 py-2 shrink-0 text-sm text-gray-400 hover:text-white hover:bg-vscode-sidebar-hover focus:outline-none focus:ring-1 focus:ring-vscode-accent"
+          onClick={() => handleSave()}
+          className={`flex items-center gap-2 px-3 py-2 shrink-0 text-sm focus:outline-none focus-visible:ring-1 focus-visible:ring-vscode-accent ${
+            savedFeedback
+              ? "text-green-400 bg-green-900/20"
+              : "text-gray-400 hover:text-white hover:bg-vscode-sidebar-hover"
+          }`}
           aria-label="Salvar arquivo (Ctrl+S)"
-          title="Salvar (Ctrl+S)"
+          title={savedFeedback ? "Salvo" : "Salvar (Ctrl+S)"}
         >
-          <Save className="w-4 h-4" aria-hidden />
-          Salvar
+          {savedFeedback ? <Check className="w-4 h-4" aria-hidden /> : <Save className="w-4 h-4" aria-hidden />}
+          {savedFeedback ? "Salvo" : "Salvar"}
         </button>
       </div>
       {/* Editor */}

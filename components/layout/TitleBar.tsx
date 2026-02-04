@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { FolderOpen, FolderX, Terminal } from "lucide-react";
+import { FolderOpen, FolderX, Terminal, Loader2 } from "lucide-react";
 import { useIdeState } from "@/hooks/useIdeState";
 
 /**
@@ -42,11 +42,11 @@ export function TitleBar() {
           type="button"
           onClick={handleOpenFolder}
           disabled={opening}
-          className="flex items-center gap-2 px-3 py-1.5 rounded text-sm hover:bg-vscode-sidebar-hover focus:outline-none focus:ring-2 focus:ring-vscode-accent disabled:opacity-50"
+          className="flex items-center gap-2 px-3 py-1.5 rounded text-sm hover:bg-vscode-sidebar-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-vscode-accent disabled:opacity-50"
           aria-label="Abrir pasta local"
           title="Abrir pasta local"
         >
-          <FolderOpen className="w-4 h-4" aria-hidden />
+          {opening ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden /> : <FolderOpen className="w-4 h-4" aria-hidden />}
           {opening ? "Abrindo…" : "Abrir pasta"}
         </button>
         {folderName && (
@@ -54,7 +54,7 @@ export function TitleBar() {
             type="button"
             onClick={() => forgetStoredDirectory()}
             disabled={opening}
-            className="flex items-center gap-2 px-3 py-1.5 rounded text-sm hover:bg-vscode-sidebar-hover focus:outline-none focus:ring-2 focus:ring-vscode-accent disabled:opacity-50 text-gray-400 hover:text-gray-200"
+            className="flex items-center gap-2 px-3 py-1.5 rounded text-sm hover:bg-vscode-sidebar-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-vscode-accent disabled:opacity-50 text-gray-400 hover:text-gray-200"
             aria-label="Esquecer pasta (remove persistência)"
             title="Esquecer pasta salva e fechar projeto"
           >
@@ -66,11 +66,11 @@ export function TitleBar() {
           type="button"
           onClick={() => runCurrentFile()}
           disabled={!canRunFile}
-          className="flex items-center gap-2 px-3 py-1.5 rounded text-sm hover:bg-vscode-sidebar-hover focus:outline-none focus:ring-2 focus:ring-vscode-accent disabled:opacity-50"
+          className="flex items-center gap-2 px-3 py-1.5 rounded text-sm hover:bg-vscode-sidebar-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-vscode-accent disabled:opacity-50"
           aria-label="Executar arquivo ativo (Node ou Python)"
           title={!folderName ? "Abra uma pasta primeiro" : isRunFileRunning ? "Executando…" : "Executar arquivo ativo"}
         >
-          <Terminal className="w-4 h-4" aria-hidden />
+          {isRunFileRunning ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden /> : <Terminal className="w-4 h-4" aria-hidden />}
           {isRunFileRunning ? "Executando…" : "Executar"}
         </button>
       </div>

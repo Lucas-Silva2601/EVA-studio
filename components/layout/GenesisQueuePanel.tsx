@@ -37,7 +37,7 @@ export function GenesisQueuePanel() {
         <button
           type="button"
           onClick={() => setGenesisQueue(null)}
-          className="p-1.5 rounded hover:bg-vscode-sidebar-hover text-gray-400 hover:text-gray-200 focus:outline-none focus:ring-1 focus:ring-vscode-accent"
+          className="p-1.5 rounded hover:bg-vscode-sidebar-hover text-gray-400 hover:text-gray-200 focus:outline-none focus-visible:ring-1 focus-visible:ring-vscode-accent"
           aria-label="Fechar fila"
         >
           <X className="w-4 h-4" />
@@ -59,7 +59,7 @@ export function GenesisQueuePanel() {
           type="button"
           onClick={handleExecute}
           disabled={executing}
-          className="flex items-center gap-2 rounded bg-green-700 hover:bg-green-800 text-white px-3 py-1.5 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex items-center gap-2 rounded bg-green-700 hover:bg-green-800 text-white px-3 py-1.5 text-xs font-medium focus:outline-none focus-visible:ring-1 focus-visible:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
           aria-label="Executar Gênesis (criar/alterar todos os arquivos)"
         >
           {executing ? (

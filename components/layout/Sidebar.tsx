@@ -53,13 +53,13 @@ export function Sidebar() {
       aria-label="Explorador de arquivos"
     >
       <div className="px-2 py-2 border-b border-vscode-border shrink-0 flex items-center justify-between gap-2">
-        <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+        <h2 className="panel-title">
           Explorador
         </h2>
         <button
           type="button"
           onClick={() => setShowMap(true)}
-          className="flex items-center gap-1 rounded px-1.5 py-1 text-[10px] text-gray-400 hover:text-gray-200 hover:bg-vscode-sidebar-hover focus:outline-none focus:ring-1 focus:ring-vscode-accent"
+          className="flex items-center gap-1 rounded px-1.5 py-1 text-[10px] text-gray-400 hover:text-gray-200 hover:bg-vscode-sidebar-hover focus:outline-none focus-visible:ring-1 focus-visible:ring-vscode-accent"
           aria-label="Ver mapa do projeto (Mermaid)"
           title="Ver mapa do projeto"
         >
@@ -74,7 +74,7 @@ export function Sidebar() {
         <ArchitectureMapView fileTree={fileTree} onClose={() => setShowMap(false)} />
       )}
       <div
-        className="w-3 shrink-0 bg-zinc-600 hover:bg-blue-500 transition-colors cursor-col-resize flex-shrink-0 flex items-center justify-center group"
+        className="resize-handle-horizontal shrink-0 flex-shrink-0 flex items-center justify-center"
         role="separator"
         aria-orientation="vertical"
         aria-valuenow={size}
@@ -87,7 +87,7 @@ export function Sidebar() {
           if (e.key === "ArrowRight") setSize((s) => Math.min(SIDEBAR_MAX, s + 10));
         }}
       >
-        <span className="w-0.5 h-8 bg-zinc-500 group-hover:bg-white/80 rounded-full opacity-70" aria-hidden />
+        <span className="resize-handle-inner w-0.5 h-8" aria-hidden />
       </div>
     </div>
   );

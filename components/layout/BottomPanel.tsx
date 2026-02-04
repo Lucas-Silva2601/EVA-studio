@@ -35,7 +35,9 @@ export function BottomPanel() {
   }, [onMouseMove, onMouseUp]);
 
   useEffect(() => {
-    if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
+    if (listRef.current) {
+      listRef.current.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" });
+    }
   }, [outputMessages]);
 
   const typeStyles = {
@@ -55,7 +57,7 @@ export function BottomPanel() {
 
   return (
     <div
-      className="flex flex-col shrink-0 bg-vscode-panel border-t border-vscode-border"
+      className="flex flex-col shrink-0 bg-vscode-panel border-t border-vscode-border transition-panel"
       style={{ height: open ? size : 40 }}
       role="region"
       aria-label="Painel de saída"
@@ -63,7 +65,7 @@ export function BottomPanel() {
       {/* Alça de redimensionamento no topo (borda entre editor e terminal) — arraste para mudar a altura */}
       {open && (
         <div
-          className="h-3 shrink-0 bg-zinc-600 hover:bg-blue-500 transition-colors cursor-row-resize flex-shrink-0 flex items-center justify-center group"
+          className="resize-handle-vertical shrink-0 flex-shrink-0 flex items-center justify-center"
           role="separator"
           aria-orientation="horizontal"
           aria-valuenow={size}
@@ -76,7 +78,7 @@ export function BottomPanel() {
             if (e.key === "ArrowDown") setSize((s) => Math.min(PANEL_MAX, s + 10));
           }}
         >
-          <span className="h-0.5 w-12 bg-zinc-500 group-hover:bg-white/80 rounded-full opacity-70" aria-hidden />
+          <span className="resize-handle-inner h-0.5 w-12" aria-hidden />
         </div>
       )}
       {/* Cabeçalho do painel */}
@@ -95,7 +97,7 @@ export function BottomPanel() {
         aria-controls="output-content"
       >
         <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+          <span className="panel-title">
             Output
           </span>
           <span className="text-xs text-gray-500" aria-live="polite" title={`Estado: ${statusLabel}`}>
@@ -114,7 +116,7 @@ export function BottomPanel() {
               e.stopPropagation();
               clearOutput();
             }}
-            className="p-1.5 rounded hover:bg-vscode-sidebar-hover focus:outline-none focus:ring-1 focus:ring-vscode-accent"
+            className="p-1.5 rounded hover:bg-vscode-sidebar-hover focus:outline-none focus-visible:ring-1 focus-visible:ring-vscode-accent"
             aria-label="Limpar saída"
           >
             <Trash2 className="w-4 h-4 text-gray-500" aria-hidden />
@@ -127,11 +129,11 @@ export function BottomPanel() {
         <div
           id="output-content"
           ref={listRef}
-          className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden scrollbar-thin px-3 py-2 font-mono text-sm"
+          className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden scrollbar-thin px-3 py-2 font-mono text-sm [scroll-behavior:smooth]"
           style={{ scrollbarWidth: "thin" }}
         >
           {outputMessages.length === 0 ? (
-            <p className="text-gray-500 text-sm">
+            <p className="text-ds-text-muted text-sm">
               Mensagens do fluxo de automação aparecerão aqui (ex.: &quot;Analisando checklist...&quot;, &quot;Aguardando resposta do Gemini...&quot;).
             </p>
           ) : (

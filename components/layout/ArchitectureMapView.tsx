@@ -96,7 +96,7 @@ export function ArchitectureMapView({ fileTree, onClose }: ArchitectureMapViewPr
       <div
         ref={dialogRef}
         tabIndex={-1}
-        className="flex flex-col w-full max-w-4xl max-h-[85vh] rounded-lg bg-vscode-sidebar border border-vscode-border shadow-xl overflow-hidden outline-none focus:outline-none focus:ring-2 focus:ring-vscode-accent focus:ring-inset"
+        className="flex flex-col w-full max-w-4xl max-h-[85vh] rounded-lg bg-vscode-sidebar border border-vscode-border shadow-xl overflow-hidden outline-none focus:outline-none focus-visible:ring-2 focus-visible:ring-vscode-accent focus-visible:ring-inset"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-vscode-border bg-vscode-titlebar/80">
@@ -106,10 +106,10 @@ export function ArchitectureMapView({ fileTree, onClose }: ArchitectureMapViewPr
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded hover:bg-vscode-sidebar-hover focus:outline-none focus:ring-1 focus:ring-vscode-accent text-gray-400 hover:text-gray-200"
+            className="p-1.5 rounded hover:bg-vscode-sidebar-hover focus:outline-none focus-visible:ring-1 focus-visible:ring-vscode-accent text-gray-400 hover:text-gray-200"
             aria-label="Fechar mapa"
           >
-            <X className="w-5 h-5" />
+            <X className="w-5 h-5" aria-hidden />
           </button>
         </div>
         <div className="flex-1 overflow-auto min-h-0 p-4 bg-vscode-bg/80 scrollbar-thin">

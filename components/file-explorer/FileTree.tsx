@@ -92,7 +92,7 @@ function TreeNode({ node, depth }: TreeNodeProps) {
           type="button"
           onClick={handleClick}
           disabled={loading}
-          className={`flex-1 min-w-0 flex items-center gap-1.5 py-1 px-2 rounded text-left text-sm hover:bg-vscode-sidebar-hover focus:outline-none focus:ring-1 focus:ring-vscode-accent disabled:opacity-70 ${
+          className={`flex-1 min-w-0 flex items-center gap-1.5 py-1 px-2 rounded text-left text-sm hover:bg-vscode-sidebar-hover focus:outline-none focus-visible:ring-1 focus-visible:ring-vscode-accent disabled:opacity-70 ${
             isActive ? "bg-vscode-accent/20 text-white" : "text-gray-300"
           }`}
           aria-expanded={isDir ? expanded : undefined}
@@ -123,11 +123,11 @@ function TreeNode({ node, depth }: TreeNodeProps) {
         <button
           type="button"
           onClick={handleDelete}
-          className={`shrink-0 p-1 rounded text-gray-400 hover:text-red-400 hover:bg-vscode-sidebar-hover focus:outline-none focus:ring-1 focus:ring-vscode-accent ${showDelete ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+          className={`shrink-0 p-1 rounded text-gray-400 hover:text-red-400 hover:bg-vscode-sidebar-hover focus:outline-none focus-visible:ring-1 focus-visible:ring-vscode-accent ${showDelete ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
           title={isDir ? `Apagar pasta ${node.name}` : `Apagar arquivo ${node.name}`}
           aria-label={isDir ? `Apagar pasta ${node.name}` : `Apagar arquivo ${node.name}`}
         >
-          <Trash2 className="w-3.5 h-3.5" />
+          <Trash2 className="w-3.5 h-3.5" aria-hidden />
         </button>
       </div>
       {isDir && expanded && hasChildren && (

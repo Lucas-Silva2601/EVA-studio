@@ -58,7 +58,7 @@ export function ChatCodeBlock({
   const multiFile = onImplementAll != null && codeBlocksWithFile.length >= 2;
 
   return (
-    <div className={`whitespace-pre-wrap break-words text-zinc-50 ${className}`}>
+    <div className={`whitespace-pre-wrap break-words text-ds-text-primary ${className}`}>
       {segments.map((seg, i) => {
         if (seg.type === "text") {
           return <span key={i}>{seg.value}</span>;
@@ -78,7 +78,7 @@ export function ChatCodeBlock({
                 <button
                   type="button"
                   onClick={() => onImplement(seg.filePath!, seg.contentWithoutFile)}
-                  className="rounded bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  className="rounded bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 text-xs font-medium focus:outline-none focus-visible:ring-1 focus-visible:ring-blue-400"
                   aria-label={buttonLabel}
                 >
                   {buttonLabel}
@@ -100,7 +100,7 @@ export function ChatCodeBlock({
                 }))
               )
             }
-            className="rounded bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-blue-400"
+            className="rounded bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 text-xs font-medium focus:outline-none focus-visible:ring-1 focus-visible:ring-blue-400"
             aria-label={buttonLabel}
           >
             {buttonLabel} ({codeBlocksWithFile.length} arquivos)
