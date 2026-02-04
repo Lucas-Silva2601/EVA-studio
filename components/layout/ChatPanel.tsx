@@ -37,7 +37,7 @@ export function ChatPanel() {
   return (
     <div
       ref={panelRef}
-      className="flex shrink-0 h-full bg-vscode-sidebar border-l border-vscode-border"
+      className="flex shrink-0 h-full bg-ds-surface-light dark:bg-ds-surface border-l border-ds-border-light dark:border-ds-border"
       style={{ width: size }}
       role="complementary"
       aria-label="Chat EVA"

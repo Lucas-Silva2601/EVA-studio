@@ -10,10 +10,10 @@ Definir tokens de cores neon e glow em `tailwind.config.ts` e `globals.css`.
 
 ## Checklist de Ações
 
-- [ ] **1.1 Cores neon** — Adicionar `ds-accent-neon`, `ds-accent-neon-hover` em tailwind e globals.css
-- [ ] **1.2 Glow** — Definir variável `--ds-glow-neon` e classe utilitária para box-shadow
-- [ ] **1.3 Aliases** — Manter retrocompatibilidade com vscode-accent apontando para neon (ou variante)
-- [ ] **1.4 Documentar** — Atualizar design-tokens.md com paleta neon
+- [x] **1.1 Cores neon** — Adicionar `ds-accent-neon`, `ds-accent-neon-hover` em tailwind e globals.css
+- [x] **1.2 Glow** — Definir variável `--ds-glow-neon` e classe utilitária para box-shadow
+- [x] **1.3 Aliases** — Manter retrocompatibilidade com vscode-accent apontando para neon (ou variante)
+- [x] **1.4 Documentar** — Atualizar design-tokens.md com paleta neon
 
 ---
 

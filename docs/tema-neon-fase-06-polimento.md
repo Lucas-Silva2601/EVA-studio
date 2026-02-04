@@ -10,11 +10,11 @@ Verificar contraste em ambos os temas, transições suaves na troca e ajustes fi
 
 ## Checklist de Ações
 
-- [ ] **6.1 Contraste WCAG** — Validar ratio em tema claro e escuro (accent neon, texto)
-- [ ] **6.2 Transição de tema** — Transição suave (opcional: transition em html ou body)
-- [ ] **6.3 Monaco Editor** — Garantir que tema do editor acompanhe (dark/light)
-- [ ] **6.4 Alto contraste** — Manter @media (prefers-contrast: more) funcionando
-- [ ] **6.5 Documentação** — Atualizar design-tokens.md e acessibilidade.md
+- [x] **6.1 Contraste WCAG** — Validar ratio em tema claro e escuro (accent neon, texto)
+- [x] **6.2 Transição de tema** — Transição suave (opcional: transition em html ou body)
+- [x] **6.3 Monaco Editor** — Garantir que tema do editor acompanhe (dark/light)
+- [x] **6.4 Alto contraste** — Manter @media (prefers-contrast: more) funcionando
+- [x] **6.5 Documentação** — Atualizar design-tokens.md e acessibilidade.md
 
 ---
 

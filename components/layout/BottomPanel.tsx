@@ -41,10 +41,10 @@ export function BottomPanel() {
   }, [outputMessages]);
 
   const typeStyles = {
-    info: "text-vscode-msg-info",
-    success: "text-vscode-msg-success",
-    warning: "text-vscode-msg-warning",
-    error: "text-vscode-msg-error",
+    info: "text-[var(--ds-text-info)]",
+    success: "text-[var(--ds-text-success)]",
+    warning: "text-[var(--ds-text-warning)]",
+    error: "text-[var(--ds-text-error)]",
   };
 
   const LOOP_STATUS_LABELS: Record<string, string> = {
@@ -57,7 +57,7 @@ export function BottomPanel() {
 
   return (
     <div
-      className="flex flex-col shrink-0 bg-vscode-panel border-t border-vscode-border transition-panel"
+      className="flex flex-col shrink-0 bg-ds-bg-secondary-light dark:bg-ds-bg-secondary border-t border-ds-border-light dark:border-ds-border transition-panel"
       style={{ height: open ? size : 40 }}
       role="region"
       aria-label="Painel de saída"
@@ -83,7 +83,7 @@ export function BottomPanel() {
       )}
       {/* Cabeçalho do painel */}
       <div
-        className="h-10 flex items-center justify-between px-3 border-b border-vscode-border bg-vscode-sidebar/80 shrink-0"
+        className="h-10 flex items-center justify-between px-3 border-b border-ds-border-light dark:border-ds-border bg-ds-surface-light/80 dark:bg-ds-surface/80 shrink-0"
         role="button"
         tabIndex={0}
         onClick={() => setOpen((o) => !o)}
@@ -100,13 +100,13 @@ export function BottomPanel() {
           <span className="panel-title">
             Output
           </span>
-          <span className="text-xs text-gray-500" aria-live="polite" title={`Estado: ${statusLabel}`}>
+          <span className="text-xs text-ds-text-muted-light dark:text-ds-text-muted" aria-live="polite" title={`Estado: ${statusLabel}`}>
             • {statusLabel}
           </span>
           {open ? (
-            <ChevronDown className="w-4 h-4 text-gray-500" aria-hidden />
+            <ChevronDown className="w-4 h-4 text-ds-text-muted-light dark:text-ds-text-muted" aria-hidden />
           ) : (
-            <ChevronUp className="w-4 h-4 text-gray-500" aria-hidden />
+            <ChevronUp className="w-4 h-4 text-ds-text-muted-light dark:text-ds-text-muted" aria-hidden />
           )}
         </div>
         {open && (
@@ -116,10 +116,10 @@ export function BottomPanel() {
               e.stopPropagation();
               clearOutput();
             }}
-            className="p-1.5 rounded hover:bg-vscode-sidebar-hover focus:outline-none focus-visible:ring-1 focus-visible:ring-vscode-accent"
+            className="p-1.5 rounded hover:bg-ds-surface-hover-light dark:hover:bg-ds-surface-hover focus:outline-none focus-visible:ring-1 focus-visible:ring-ds-accent-neon"
             aria-label="Limpar saída"
           >
-            <Trash2 className="w-4 h-4 text-gray-500" aria-hidden />
+            <Trash2 className="w-4 h-4 text-ds-text-muted-light dark:text-ds-text-muted" aria-hidden />
           </button>
         )}
       </div>
@@ -133,7 +133,7 @@ export function BottomPanel() {
           style={{ scrollbarWidth: "thin" }}
         >
           {outputMessages.length === 0 ? (
-            <p className="text-ds-text-muted text-sm">
+            <p className="text-ds-text-muted-light dark:text-ds-text-muted text-sm">
               Mensagens do fluxo de automação aparecerão aqui (ex.: &quot;Analisando checklist...&quot;, &quot;Aguardando resposta do Gemini...&quot;).
             </p>
           ) : (
@@ -143,7 +143,7 @@ export function BottomPanel() {
                 className={`py-0.5 ${typeStyles[msg.type]}`}
                 role="log"
               >
-                <span className="text-gray-500 select-none">
+                <span className="text-ds-text-muted-light dark:text-ds-text-muted select-none">
                   [{msg.timestamp.toLocaleTimeString("pt-BR")}]
                 </span>{" "}
                 {msg.text}

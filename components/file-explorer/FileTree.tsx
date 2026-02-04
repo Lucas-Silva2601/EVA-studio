@@ -6,7 +6,7 @@ import type { FileNode } from "@/types";
 import { useIdeState } from "@/hooks/useIdeState";
 import { getLanguageFromFilename } from "@/lib/utils";
 
-const ICON_CLASS = "w-4 h-4 shrink-0 text-gray-400";
+const ICON_CLASS = "w-4 h-4 shrink-0 text-ds-text-secondary-light dark:text-ds-text-secondary";
 
 function getFileIcon(name: string) {
   return <FileCode className={ICON_CLASS} aria-hidden />;
@@ -92,8 +92,8 @@ function TreeNode({ node, depth }: TreeNodeProps) {
           type="button"
           onClick={handleClick}
           disabled={loading}
-          className={`flex-1 min-w-0 flex items-center gap-1.5 py-1 px-2 rounded text-left text-sm hover:bg-vscode-sidebar-hover focus:outline-none focus-visible:ring-1 focus-visible:ring-vscode-accent disabled:opacity-70 ${
-            isActive ? "bg-vscode-accent/20 text-white" : "text-gray-300"
+          className={`flex-1 min-w-0 flex items-center gap-1.5 py-1 px-2 rounded text-left text-sm hover:bg-ds-surface-hover-light dark:hover:bg-ds-surface-hover focus:outline-none focus-visible:ring-1 focus-visible:ring-ds-accent-neon disabled:opacity-70 ${
+            isActive ? "bg-ds-accent-light/20 dark:bg-ds-accent-neon/20 text-ds-text-primary-light dark:text-ds-text-primary" : "text-ds-text-primary-light dark:text-ds-text-primary"
           }`}
           aria-expanded={isDir ? expanded : undefined}
           aria-current={isActive ? "true" : undefined}
@@ -123,7 +123,7 @@ function TreeNode({ node, depth }: TreeNodeProps) {
         <button
           type="button"
           onClick={handleDelete}
-          className={`shrink-0 p-1 rounded text-gray-400 hover:text-red-400 hover:bg-vscode-sidebar-hover focus:outline-none focus-visible:ring-1 focus-visible:ring-vscode-accent ${showDelete ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+          className={`shrink-0 p-1 rounded text-ds-text-secondary-light dark:text-ds-text-secondary hover:text-red-500 hover:bg-ds-surface-hover-light dark:hover:bg-ds-surface-hover focus:outline-none focus-visible:ring-1 focus-visible:ring-ds-accent-neon ${showDelete ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
           title={isDir ? `Apagar pasta ${node.name}` : `Apagar arquivo ${node.name}`}
           aria-label={isDir ? `Apagar pasta ${node.name}` : `Apagar arquivo ${node.name}`}
         >

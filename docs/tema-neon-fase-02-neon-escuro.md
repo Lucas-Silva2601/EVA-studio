@@ -10,12 +10,12 @@ Substituir o accent azul por verde neon nos componentes principais.
 
 ## Checklist de Ações
 
-- [ ] **2.1 Accent principal** — Usar ds-accent-neon em botões primários (Executar, Implementar, Salvar)
-- [ ] **2.2 Focus ring** — focus-visible:ring com cor neon
-- [ ] **2.3 Resize handles** — Hover com accent neon
-- [ ] **2.4 Títulos de painéis** — Explorador, Output, Chat com cor neon ou borda sutil
-- [ ] **2.5 Scrollbars** — Thumb no hover com cor neon (opcional)
-- [ ] **2.6 Glow em destaque** — Botões primários com glow sutil (opcional)
+- [x] **2.1 Accent principal** — Usar ds-accent-neon em botões primários (Executar, Implementar, Salvar)
+- [x] **2.2 Focus ring** — focus-visible:ring com cor neon
+- [x] **2.3 Resize handles** — Hover com accent neon
+- [x] **2.4 Títulos de painéis** — Explorador, Output, Chat com cor neon ou borda sutil
+- [x] **2.5 Scrollbars** — Thumb no hover com cor neon (opcional)
+- [x] **2.6 Glow em destaque** — Botões primários com glow sutil (opcional)
 
 ---
 

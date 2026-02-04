@@ -10,11 +10,11 @@ Definir tokens para light mode (backgrounds, texto, accent) em tailwind e global
 
 ## Checklist de Ações
 
-- [ ] **3.1 Backgrounds light** — ds-bg-primary-light, ds-surface-light, ds-surface-elevated-light
-- [ ] **3.2 Texto light** — ds-text-primary-light, ds-text-secondary-light, ds-text-muted-light
-- [ ] **3.3 Accent light** — Verde escuro para contraste (ex: #00aa44)
-- [ ] **3.4 Bordas light** — ds-border-light
-- [ ] **3.5 Variáveis CSS** — Usar data-theme="light" ou :root.light para aplicar
+- [x] **3.1 Backgrounds light** — ds-bg-primary-light, ds-surface-light, ds-surface-elevated-light
+- [x] **3.2 Texto light** — ds-text-primary-light, ds-text-secondary-light, ds-text-muted-light
+- [x] **3.3 Accent light** — Verde escuro para contraste (ex: #00aa44)
+- [x] **3.4 Bordas light** — ds-border-light
+- [x] **3.5 Variáveis CSS** — Usar data-theme="light" ou :root.light para aplicar
 
 ---
 

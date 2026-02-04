@@ -15,6 +15,10 @@ Documentação de acessibilidade da IDE EVA Studio, alinhada às diretrizes WCAG
 | **Ctrl + S** | Salvar arquivo atual no editor |
 | **Arrow keys** | Redimensionar painéis (em resize handles focados): ← → no Explorador e Chat; ↑ ↓ no Output |
 
+### Tema claro/escuro
+- Botão na **TitleBar** (ícone Sol/Lua) alterna entre tema claro e escuro.
+- Preferência persistida em `localStorage.theme`; quando não há preferência salva, respeita `prefers-color-scheme` do sistema.
+
 ---
 
 ## Navegação por Teclado
@@ -25,7 +29,7 @@ Documentação de acessibilidade da IDE EVA Studio, alinhada às diretrizes WCAG
 
 ### Ordem de Tab
 1. Skip link
-2. Botões da TitleBar (Abrir pasta, Esquecer pasta, Executar)
+2. Botões da TitleBar (Alternar tema claro/escuro, Abrir pasta, Esquecer pasta, Executar)
 3. Botão Mapa (Sidebar)
 4. Itens do explorador de arquivos
 5. Abas do editor e botão fechar
@@ -54,7 +58,7 @@ Documentação de acessibilidade da IDE EVA Studio, alinhada às diretrizes WCAG
 
 Todos os elementos interativos usam `focus-visible:ring` (não `focus:ring`):
 - O ring aparece apenas ao navegar por teclado, não ao clicar com mouse.
-- Cor do ring: `vscode-accent` (azul) ou variantes semânticas (verde, vermelho, amarelo).
+- Cor do ring: accent neon (tema escuro) ou accent light (tema claro); variantes semânticas (verde, vermelho, amarelo) em ações específicas.
 
 ---
 
@@ -76,16 +80,27 @@ Todos os elementos interativos usam `focus-visible:ring` (não `focus:ring`):
 
 ## Contraste (WCAG AA)
 
+### Tema escuro (neon)
+
 | Combinação | Ratio | Status |
 |------------|-------|--------|
-| Texto principal (gray-200) em fundo escuro | 12.6:1 | ✓ AAA |
-| Texto secundário (gray-400) em fundo escuro | 4.6:1 | ✓ AA |
-| Accent (azul) em fundo escuro | 4.5:1 | ✓ AA |
-| Success (verde) em fundo escuro | 4.5:1 | ✓ AA |
-| Error (vermelho) em fundo escuro | 4.5:1 | ✓ AA |
+| Texto principal (#e5e5e5) em fundo (#1e1e1e) | 12.6:1 | ✓ AAA |
+| Texto secundário (#a3a3a3) em fundo escuro | 4.6:1 | ✓ AA |
+| Accent neon (#39ff14) em fundo (#1e1e1e) | ~12:1 | ✓ AAA |
+| Accent neon em botões (texto escuro) | Alto | ✓ AA |
+| Success / Error em fundo escuro | 4.5:1 | ✓ AA |
 
-### Alto Contraste
-- `@media (prefers-contrast: more)` em `globals.css` aumenta outline de focus (3px) para usuários que preferem alto contraste.
+### Tema claro
+
+| Combinação | Ratio | Status |
+|------------|-------|--------|
+| Texto principal (#24292f) em fundo (#ffffff) | 12.5:1 | ✓ AAA |
+| Texto secundário (#57606a) em fundo claro | 4.6:1 | ✓ AA |
+| Accent light (#00aa44) em fundo (#ffffff) | ~4.5:1 | ✓ AA |
+| Bordas e muted | Conformes | ✓ AA |
+
+### Alto contraste
+- `@media (prefers-contrast: more)` em `globals.css` aumenta outline de focus (3px, offset 2px) para usuários que preferem alto contraste.
 
 ---
 

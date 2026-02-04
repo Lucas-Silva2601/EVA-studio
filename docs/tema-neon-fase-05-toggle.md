@@ -10,11 +10,11 @@ Adicionar botão na TitleBar para alternar entre tema claro e escuro; persistir 
 
 ## Checklist de Ações
 
-- [ ] **5.1 Botão toggle** — Ícone Sun/Moon na TitleBar; aria-label apropriado
-- [ ] **5.2 Hook ou estado** — useTheme ou estado que lê localStorage e aplica classe no html
-- [ ] **5.3 Script layout** — Garantir que script no layout aplique "dark" ou "light" conforme localStorage.theme
-- [ ] **5.4 Lógica** — Clicar: alternar entre 'dark' e 'light'; salvar em localStorage; aplicar class no documentElement
-- [ ] **5.5 Preferência do sistema** — Manter opção de respeitar prefers-color-scheme quando não há preferência salva
+- [x] **5.1 Botão toggle** — Ícone Sun/Moon na TitleBar; aria-label apropriado
+- [x] **5.2 Hook ou estado** — useTheme ou estado que lê localStorage e aplica classe no html
+- [x] **5.3 Script layout** — Garantir que script no layout aplique "dark" ou "light" conforme localStorage.theme
+- [x] **5.4 Lógica** — Clicar: alternar entre 'dark' e 'light'; salvar em localStorage; aplicar class no documentElement
+- [x] **5.5 Preferência do sistema** — Manter opção de respeitar prefers-color-scheme quando não há preferência salva
 
 ---
 

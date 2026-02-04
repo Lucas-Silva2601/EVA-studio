@@ -130,6 +130,56 @@ className="bg-vscode-sidebar" // equivalente a ds-surface
 
 ---
 
+## Tema Neon
+
+Tokens para o tema neon (Fase 1 do tema neon). Cores de destaque e glow para uso em modo escuro/neon.
+
+| Token | Valor | Uso |
+|-------|-------|-----|
+| `ds-accent-neon` | `#39ff14` | Cor de destaque neon (verde neon) |
+| `ds-accent-neon-hover` | `#5fff50` | Hover em elementos accent neon |
+| `--ds-glow-neon` | `0 0 10px rgba(57,255,20,0.3)` | Box-shadow para efeito glow neon |
+
+### Uso
+
+- **Tailwind**: `bg-ds-accent-neon`, `text-ds-accent-neon`, `hover:bg-ds-accent-neon-hover`
+- **Classe utilitária**: `.glow-neon` aplica o box-shadow neon
+- **CSS**: `var(--ds-glow-neon)`, `var(--ds-accent-neon)`
+- **Alias**: `vscode-accent-neon` aponta para `ds-accent-neon` (retrocompatibilidade)
+
+### Contraste (WCAG)
+- Neon (#39ff14) em fundo escuro (#1e1e1e): ratio ~12:1 (AAA). Em botões primários usa-se texto escuro sobre neon para contraste adequado.
+
+---
+
+## Tema Claro (Fase 3)
+
+Tokens para light mode. Aplicados via `html:not(.dark)` em `globals.css` (quando a classe `dark` não está no `<html>`). No Tailwind use as classes com sufixo `-light` para estilos explícitos (ex.: `bg-ds-surface-light`) ou variante `dark:` para dual theme (Fase 4).
+
+| Token | Valor | Uso |
+|-------|-------|-----|
+| `ds-bg-primary-light` | `#f6f8fa` | Fundo principal |
+| `ds-bg-secondary-light` | `#eaeef2` | Fundo secundário (painéis) |
+| `ds-surface-light` | `#ffffff` | Superfície (sidebar, chat) |
+| `ds-surface-hover-light` | `#f0f2f5` | Hover em superfície |
+| `ds-surface-elevated-light` | `#f0f0f0` | Titlebar |
+| `ds-border-light` | `#d0d7de` | Bordas |
+| `ds-accent-light` | `#00aa44` | Accent (verde escuro para contraste) |
+| `ds-accent-light-hover` | `#00c044` | Hover em accent |
+| `ds-text-primary-light` | `#24292f` | Texto principal |
+| `ds-text-secondary-light` | `#57606a` | Texto secundário |
+| `ds-text-muted-light` | `#8b949e` | Texto muted |
+
+### Uso
+
+- **Variáveis CSS**: Em `html:not(.dark)` as mesmas variáveis `--ds-bg-primary`, `--ds-surface`, etc. são redefinidas para os valores light; componentes que usam `var(--ds-*)` passam a refletir o tema.
+- **Tailwind**: `bg-ds-surface-light`, `text-ds-text-primary-light`, `border-ds-border-light`, `bg-ds-accent-light` para estilos explícitos no tema claro.
+
+### Contraste (WCAG)
+- Accent light (#00aa44) em fundo branco: ratio ~4.5:1 (AA). Texto principal (#24292f) em #fff: AAA.
+
+---
+
 ## Variáveis CSS (`:root`)
 
 As variáveis em `globals.css` expõem os tokens para uso em CSS puro e componentes que precisam de `var()`:
@@ -139,6 +189,9 @@ As variáveis em `globals.css` expõem os tokens para uso em CSS puro e componen
 --ds-surface
 --ds-border
 --ds-accent
+--ds-accent-neon
+--ds-accent-neon-hover
+--ds-glow-neon
 --ds-text-primary
 --ds-text-secondary
 --ds-text-muted

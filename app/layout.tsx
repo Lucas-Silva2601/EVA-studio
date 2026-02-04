@@ -8,13 +8,16 @@ export const metadata: Metadata = {
 
 /**
  * Script inline no head para evitar FOUC (flash of unstyled content).
- * Aplica class="dark" no <html> antes do primeiro paint, respeitando
- * localStorage.theme e prefers-color-scheme.
+ * Aplica ou remove class="dark" no <html> antes do primeiro paint:
+ * - localStorage.theme === 'dark' → dark
+ * - localStorage.theme === 'light' → light (remove dark)
+ * - Sem preferência salva → respeita prefers-color-scheme
  */
 const themeScript = `
 (function() {
-  const isDark = localStorage.theme === 'dark' ||
-    (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  const stored = localStorage.theme;
+  const isDark = stored === 'dark' ||
+    (stored !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
   document.documentElement.classList.toggle('dark', isDark);
 })();
 `;
@@ -32,7 +35,7 @@ export default function RootLayout({
           suppressHydrationWarning
         />
       </head>
-      <body className="bg-vscode-bg text-gray-200 antialiased min-h-screen" suppressHydrationWarning>
+      <body className="antialiased min-h-screen" suppressHydrationWarning>
         {children}
       </body>
     </html>

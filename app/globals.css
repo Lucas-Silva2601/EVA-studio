@@ -21,6 +21,11 @@
   /* Accent */
   --ds-accent: #0e639c;
   --ds-accent-hover: #1177bb;
+  --ds-accent-neon: #39ff14;
+  --ds-accent-neon-hover: #5fff50;
+
+  /* Glow neon (box-shadow) */
+  --ds-glow-neon: 0 0 10px rgba(57, 255, 20, 0.3);
 
   /* Texto */
   --ds-text-primary: #e5e5e5;
@@ -31,10 +36,10 @@
   --ds-text-warning: #facc15;
   --ds-text-error: #f87171;
 
-  /* Scrollbars (consistência) */
+  /* Scrollbars (consistência; thumb-hover neon no tema escuro) */
   --ds-scrollbar-track: #27272a;
   --ds-scrollbar-thumb: #52525b;
-  --ds-scrollbar-thumb-hover: #71717a;
+  --ds-scrollbar-thumb-hover: #39ff14;
 
   /* Layout e densidade (Fase 6) */
   --ds-titlebar-height: 2.5rem;
@@ -52,6 +57,56 @@
   --vscode-titlebar: var(--ds-surface-elevated);
   --vscode-accent: var(--ds-accent);
   --vscode-input: #2d2d2d;
+  /* Alias neon: vscode-accent pode apontar para neon no tema dark/neon (Fase 2) */
+  --vscode-accent-neon: var(--ds-accent-neon);
+}
+
+/* ==========================================================================
+   Tema claro — variáveis aplicadas quando html não tem class="dark"
+   Documentação: docs/tema-neon-fase-03-paleta-claro.md
+   ========================================================================== */
+
+html:not(.dark) {
+  /* Backgrounds */
+  --ds-bg-primary: #f6f8fa;
+  --ds-bg-secondary: #eaeef2;
+  --ds-surface: #ffffff;
+  --ds-surface-hover: #f0f2f5;
+  --ds-surface-elevated: #f0f0f0;
+
+  /* Bordas */
+  --ds-border: #d0d7de;
+
+  /* Accent (verde escuro para contraste no claro) */
+  --ds-accent: #00aa44;
+  --ds-accent-hover: #00c044;
+
+  /* Texto */
+  --ds-text-primary: #24292f;
+  --ds-text-secondary: #57606a;
+  --ds-text-muted: #8b949e;
+  --ds-text-info: #57606a;
+  --ds-text-success: #1a7f37;
+  --ds-text-warning: #9a6700;
+  --ds-text-error: #cf222e;
+
+  /* Scrollbars tema claro */
+  --ds-scrollbar-track: #eaeef2;
+  --ds-scrollbar-thumb: #afb8c1;
+  --ds-scrollbar-thumb-hover: #8b949e;
+
+  /* Input (tema claro) */
+  --vscode-input: #ffffff;
+}
+
+/* Títulos de painéis no tema claro (accent verde) */
+html:not(.dark) .panel-title {
+  color: var(--ds-accent);
+}
+
+/* Classe utilitária para glow neon */
+.glow-neon {
+  box-shadow: var(--ds-glow-neon);
 }
 
 * {
@@ -65,6 +120,11 @@ a {
   transition: color 150ms ease, background-color 150ms ease, opacity 150ms ease, border-color 150ms ease;
 }
 
+/* Transição suave na troca de tema (Fase 6) */
+.theme-transition {
+  transition: background-color 200ms ease, color 200ms ease;
+}
+
 html,
 body {
   height: 100%;
@@ -73,13 +133,13 @@ body {
   font-family: system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif;
 }
 
-/* Títulos de painéis — hierarquia visual unificada (Fase 6) */
+/* Títulos de painéis — hierarquia visual unificada (Fase 6), tema neon */
 .panel-title {
   font-size: 0.75rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: rgb(156 163 175); /* gray-400 */
+  color: var(--ds-accent-neon);
 }
 
 /* Transições padronizadas (150–200ms) — Fase 5 */
@@ -111,12 +171,12 @@ body {
 
 .resize-handle-horizontal:hover,
 .resize-handle-vertical:hover {
-  background-color: var(--ds-accent);
+  background-color: var(--ds-accent-neon);
 }
 
 .resize-handle-horizontal:focus,
 .resize-handle-vertical:focus {
-  outline: 2px solid var(--ds-accent);
+  outline: 2px solid var(--ds-accent-neon);
   outline-offset: -2px;
 }
 

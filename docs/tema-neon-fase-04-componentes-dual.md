@@ -10,13 +10,13 @@ Refatorar componentes para suportar ambos os temas usando variantes `dark:` e de
 
 ## Checklist de Ações
 
-- [ ] **4.1 Layout e body** — bg-white dark:bg-ds-bg-primary; text para ambos
-- [ ] **4.2 TitleBar** — Cores para light e dark
-- [ ] **4.3 Sidebar e ChatPanel** — Surface e bordas dual
-- [ ] **4.4 BottomPanel** — Output com cores dual
-- [ ] **4.5 EditorArea** — Abas e botões dual
-- [ ] **4.6 Modais** — DiffReviewModal, ArchitectureMapView, GenesisQueuePanel
-- [ ] **4.7 Chat e Output** — Mensagens, typeStyles dual
+- [x] **4.1 Layout e body** — bg-white dark:bg-ds-bg-primary; text para ambos
+- [x] **4.2 TitleBar** — Cores para light e dark
+- [x] **4.3 Sidebar e ChatPanel** — Surface e bordas dual
+- [x] **4.4 BottomPanel** — Output com cores dual
+- [x] **4.5 EditorArea** — Abas e botões dual
+- [x] **4.6 Modais** — DiffReviewModal, ArchitectureMapView, GenesisQueuePanel
+- [x] **4.7 Chat e Output** — Mensagens, typeStyles dual
 
 ---
 

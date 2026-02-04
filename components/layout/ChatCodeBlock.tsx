@@ -64,21 +64,21 @@ export function ChatCodeBlock({
           return <span key={i}>{seg.value}</span>;
         }
         return (
-          <div key={i} className="my-2 rounded border border-vscode-border bg-vscode-bg/60 overflow-hidden">
+          <div key={i} className="my-2 rounded border border-ds-border-light dark:border-ds-border bg-ds-bg-primary-light/60 dark:bg-ds-bg-primary/60 overflow-hidden">
             {seg.filePath && (
-              <div className="px-2 py-1 text-[10px] text-gray-400 border-b border-vscode-border font-mono">
+              <div className="px-2 py-1 text-[10px] text-ds-text-secondary-light dark:text-ds-text-secondary border-b border-ds-border-light dark:border-ds-border font-mono">
                 {seg.filePath}
               </div>
             )}
-            <pre className="p-2 overflow-x-auto text-xs font-mono text-zinc-50 max-h-[280px] overflow-y-auto">
+            <pre className="p-2 overflow-x-auto text-xs font-mono text-ds-text-primary-light dark:text-ds-text-primary max-h-[280px] overflow-y-auto">
               <code>{seg.raw}</code>
             </pre>
             {seg.filePath && !multiFile && (
-              <div className="px-2 py-1.5 border-t border-vscode-border">
+              <div className="px-2 py-1.5 border-t border-ds-border-light dark:border-ds-border">
                 <button
                   type="button"
                   onClick={() => onImplement(seg.filePath!, seg.contentWithoutFile)}
-                  className="rounded bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 text-xs font-medium focus:outline-none focus-visible:ring-1 focus-visible:ring-blue-400"
+                  className="rounded bg-ds-accent-light dark:bg-ds-accent-neon hover:bg-ds-accent-light-hover dark:hover:bg-ds-accent-neon-hover text-white dark:text-gray-900 px-2 py-1 text-xs font-medium shadow-[var(--ds-glow-neon)] focus:outline-none focus-visible:ring-1 focus-visible:ring-ds-accent-neon"
                   aria-label={buttonLabel}
                 >
                   {buttonLabel}
@@ -89,7 +89,7 @@ export function ChatCodeBlock({
         );
       })}
       {multiFile && codeBlocksWithFile.length > 0 && (
-        <div className="mt-2 px-2 py-1.5 rounded border border-vscode-border bg-vscode-bg/80">
+        <div className="mt-2 px-2 py-1.5 rounded border border-ds-border-light dark:border-ds-border bg-ds-bg-primary-light/80 dark:bg-ds-bg-primary/80">
           <button
             type="button"
             onClick={() =>
@@ -100,7 +100,7 @@ export function ChatCodeBlock({
                 }))
               )
             }
-            className="rounded bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 text-xs font-medium focus:outline-none focus-visible:ring-1 focus-visible:ring-blue-400"
+            className="rounded bg-ds-accent-light dark:bg-ds-accent-neon hover:bg-ds-accent-light-hover dark:hover:bg-ds-accent-neon-hover text-white dark:text-gray-900 px-2 py-1 text-xs font-medium shadow-[var(--ds-glow-neon)] focus:outline-none focus-visible:ring-1 focus-visible:ring-ds-accent-neon"
             aria-label={buttonLabel}
           >
             {buttonLabel} ({codeBlocksWithFile.length} arquivos)

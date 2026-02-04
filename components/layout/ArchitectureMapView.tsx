@@ -96,25 +96,25 @@ export function ArchitectureMapView({ fileTree, onClose }: ArchitectureMapViewPr
       <div
         ref={dialogRef}
         tabIndex={-1}
-        className="flex flex-col w-full max-w-4xl max-h-[85vh] rounded-lg bg-vscode-sidebar border border-vscode-border shadow-xl overflow-hidden outline-none focus:outline-none focus-visible:ring-2 focus-visible:ring-vscode-accent focus-visible:ring-inset"
+        className="flex flex-col w-full max-w-4xl max-h-[85vh] rounded-lg bg-ds-surface-light dark:bg-ds-surface border border-ds-border-light dark:border-ds-border shadow-xl overflow-hidden outline-none focus:outline-none focus-visible:ring-2 focus-visible:ring-ds-accent-neon focus-visible:ring-inset"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-vscode-border bg-vscode-titlebar/80">
-          <h2 id="architecture-map-title" className="text-sm font-semibold text-gray-200">
+        <div className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-ds-border-light dark:border-ds-border bg-ds-surface-elevated-light/80 dark:bg-ds-surface-elevated/80">
+          <h2 id="architecture-map-title" className="text-sm font-semibold text-ds-text-primary-light dark:text-ds-text-primary">
             Mapa do Projeto (Mermaid)
           </h2>
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded hover:bg-vscode-sidebar-hover focus:outline-none focus-visible:ring-1 focus-visible:ring-vscode-accent text-gray-400 hover:text-gray-200"
+            className="p-1.5 rounded hover:bg-vscode-sidebar-hover focus:outline-none focus-visible:ring-1 focus-visible:ring-ds-accent-neon text-gray-400 hover:text-gray-200"
             aria-label="Fechar mapa"
           >
             <X className="w-5 h-5" aria-hidden />
           </button>
         </div>
-        <div className="flex-1 overflow-auto min-h-0 p-4 bg-vscode-bg/80 scrollbar-thin">
+        <div className="flex-1 overflow-auto min-h-0 p-4 bg-ds-bg-primary-light/80 dark:bg-ds-bg-primary/80 scrollbar-thin">
           {loading && (
-            <div className="flex items-center gap-2 text-gray-400">
+            <div className="flex items-center gap-2 text-ds-text-secondary-light dark:text-ds-text-secondary">
               <Loader2 className="w-5 h-5 animate-spin" aria-hidden />
               Gerando diagrama...
             </div>
