@@ -1,8 +1,11 @@
 "use client";
 
-import { useCallback, useState, useEffect, useRef } from "react";
-import { Check, X, Edit3 } from "lucide-react";
+import { useCallback, useEffect, useRef } from "react";
+import { Check, X } from "lucide-react";
 import { useIdeState } from "@/hooks/useIdeState";
+import { MonacoDiffWrapper } from "@/components/editor/MonacoDiffWrapper";
+import { getLanguageFromFilename } from "@/lib/utils";
+import { useTheme } from "@/hooks/useTheme";
 
 /**
  * Fase 9/10: Modal de Diff/Review (Human-in-the-loop).
@@ -15,16 +18,14 @@ export function DiffReviewModal() {
     rejectDiffReview,
     updatePendingDiffContent,
   } = useIdeState();
-  const [editingPath, setEditingPath] = useState<string | null>(null);
+  const { theme } = useTheme();
 
   const handleAccept = useCallback(() => {
     acceptDiffReview();
-    setEditingPath(null);
   }, [acceptDiffReview]);
 
   const handleReject = useCallback(() => {
     rejectDiffReview();
-    setEditingPath(null);
   }, [rejectDiffReview]);
 
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -47,7 +48,6 @@ export function DiffReviewModal() {
   if (!pendingDiffReview || pendingDiffReview.files.length === 0) return null;
 
   const { files } = pendingDiffReview;
-  const singleFile = files.length === 1;
 
   return (
     <div
@@ -71,7 +71,8 @@ export function DiffReviewModal() {
         <div className="flex-1 overflow-auto min-h-0 p-3 space-y-3 scrollbar-thin">
           {files.map((file) => {
             const isNewFile = file.beforeContent === null;
-            const isEditing = editingPath === file.filePath;
+            const original: string = isNewFile ? "" : (file.beforeContent ?? "");
+            const language = getLanguageFromFilename(file.filePath);
 
             return (
               <div
@@ -84,65 +85,14 @@ export function DiffReviewModal() {
                     <span className="text-xs text-green-400 shrink-0">(novo)</span>
                   )}
                 </div>
-
-                <div className="flex border-t border-ds-border-light dark:border-ds-border">
-                    {isNewFile ? (
-                      <div className="flex-1 flex flex-col p-2 min-w-0">
-                        <label className="text-xs text-ds-text-secondary-light dark:text-ds-text-secondary mb-1">Conteúdo (editável)</label>
-                        {isEditing ? (
-                          <textarea
-                            className="flex-1 min-h-[120px] px-2 py-1.5 font-mono text-sm bg-ds-bg-primary-light dark:bg-ds-bg-primary text-ds-text-primary-light dark:text-ds-text-primary border border-ds-border-light dark:border-ds-border rounded resize-y focus:outline-none focus-visible:ring-1 focus-visible:ring-ds-accent-neon disabled:opacity-50 disabled:cursor-not-allowed invalid:border-red-500"
-                            value={file.afterContent}
-                            onChange={(e) => updatePendingDiffContent(file.filePath, e.target.value)}
-                            spellCheck={false}
-                          />
-                        ) : (
-                          <pre className="min-h-[80px] max-h-[200px] overflow-auto px-2 py-1.5 font-mono text-sm text-gray-300 rounded whitespace-pre-wrap">
-                            {file.afterContent}
-                          </pre>
-                        )}
-                        <button
-                          type="button"
-                          className="mt-1 flex items-center gap-1 text-xs text-ds-text-secondary-light dark:text-ds-text-secondary hover:text-ds-text-primary-light dark:hover:text-ds-text-primary"
-                          onClick={() => setEditingPath(isEditing ? null : file.filePath)}
-                          aria-label={isEditing ? "Sair da edição do conteúdo" : "Editar conteúdo do arquivo"}
-                        >
-                          <Edit3 className="w-3 h-3" aria-hidden /> {isEditing ? "Sair da edição" : "Editar"}
-                        </button>
-                      </div>
-                    ) : (
-                      <>
-                        <div className="flex-1 min-w-0 p-2 border-r border-vscode-border">
-                          <span className="text-xs text-gray-400">Antes</span>
-                          <pre className="mt-1 min-h-[80px] max-h-[200px] overflow-auto px-2 py-1.5 font-mono text-xs text-gray-400 rounded whitespace-pre-wrap">
-                            {file.beforeContent}
-                          </pre>
-                        </div>
-                        <div className="flex-1 min-w-0 p-2">
-                          <span className="text-xs text-ds-text-secondary-light dark:text-ds-text-secondary">Depois</span>
-                          {isEditing ? (
-                            <textarea
-                              className="mt-1 w-full min-h-[120px] px-2 py-1.5 font-mono text-sm bg-ds-bg-primary-light dark:bg-ds-bg-primary text-ds-text-primary-light dark:text-ds-text-primary border border-ds-border-light dark:border-ds-border rounded resize-y focus:outline-none focus-visible:ring-1 focus-visible:ring-ds-accent-neon disabled:opacity-50 disabled:cursor-not-allowed invalid:border-red-500"
-                              value={file.afterContent}
-                              onChange={(e) => updatePendingDiffContent(file.filePath, e.target.value)}
-                              spellCheck={false}
-                            />
-                          ) : (
-                            <pre className="mt-1 min-h-[80px] max-h-[200px] overflow-auto px-2 py-1.5 font-mono text-xs text-green-300/90 rounded whitespace-pre-wrap">
-                              {file.afterContent}
-                            </pre>
-                          )}
-                          <button
-                            type="button"
-                            className="mt-1 flex items-center gap-1 text-xs text-ds-text-secondary-light dark:text-ds-text-secondary hover:text-ds-text-primary-light dark:hover:text-ds-text-primary"
-                            onClick={() => setEditingPath(isEditing ? null : file.filePath)}
-                            aria-label={isEditing ? "Sair da edição do conteúdo" : "Editar conteúdo do arquivo"}
-                          >
-                            <Edit3 className="w-3 h-3" aria-hidden /> {isEditing ? "Sair da edição" : "Editar"}
-                          </button>
-                        </div>
-                      </>
-                    )}
+                <div className="h-[min(400px,50vh)] min-h-[200px] p-2">
+                  <MonacoDiffWrapper
+                    originalContent={original}
+                    modifiedContent={file.afterContent}
+                    language={language}
+                    theme={theme}
+                    onChange={(value) => updatePendingDiffContent(file.filePath, value)}
+                  />
                 </div>
               </div>
             );

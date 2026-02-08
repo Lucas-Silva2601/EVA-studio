@@ -8,27 +8,27 @@
    ========================================================================== */
 
 :root {
-  /* Backgrounds */
-  --ds-bg-primary: #1e1e1e;
-  --ds-bg-secondary: #181818;
-  --ds-surface: #252526;
-  --ds-surface-hover: #2a2d2e;
-  --ds-surface-elevated: #323233;
+  /* Backgrounds — Cyber-Heat (chumbo profundo) */
+  --ds-bg-primary: #0D0D0F;
+  --ds-bg-secondary: #121217;
+  --ds-surface: #18181b;
+  --ds-surface-hover: #1f1f23;
+  --ds-surface-elevated: #27272a;
 
   /* Bordas */
   --ds-border: #3c3c3c;
 
-  /* Accent */
-  --ds-accent: #0e639c;
-  --ds-accent-hover: #1177bb;
-  --ds-accent-neon: #39ff14;
-  --ds-accent-neon-hover: #5fff50;
+  /* Accent — vermelho neon */
+  --ds-accent: #FF4D4D;
+  --ds-accent-hover: #FF6B6B;
+  --ds-accent-neon: #FF4D4D;
+  --ds-accent-neon-hover: #FF6B6B;
 
   /* Glow neon (box-shadow) */
-  --ds-glow-neon: 0 0 10px rgba(57, 255, 20, 0.3);
+  --ds-glow-neon: 0 0 12px rgba(255, 77, 77, 0.35);
 
   /* Texto */
-  --ds-text-primary: #e5e5e5;
+  --ds-text-primary: #F1F3F5;
   --ds-text-secondary: #a3a3a3;
   --ds-text-muted: #737373;
   --ds-text-info: #d1d5db;
@@ -39,7 +39,7 @@
   /* Scrollbars (consistência; thumb-hover neon no tema escuro) */
   --ds-scrollbar-track: #27272a;
   --ds-scrollbar-thumb: #52525b;
-  --ds-scrollbar-thumb-hover: #39ff14;
+  --ds-scrollbar-thumb-hover: #FF4D4D;
 
   /* Layout e densidade (Fase 6) */
   --ds-titlebar-height: 2.5rem;
@@ -133,13 +133,14 @@ body {
   font-family: system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif;
 }
 
-/* Títulos de painéis — hierarquia visual unificada (Fase 6), tema neon */
+/* Títulos de painéis — hierarquia visual unificada (Fase 6), Cyber-Heat */
 .panel-title {
   font-size: 0.75rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--ds-accent-neon);
+  text-shadow: 0 0 8px rgba(255, 77, 77, 0.25);
 }
 
 /* Transições padronizadas (150–200ms) — Fase 5 */

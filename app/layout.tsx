@@ -4,7 +4,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "EVA Studio - IDE Autônoma",
   description: "IDE baseada na web com agentes de IA (Analista e Programador)",
-  icons: { icon: "/icon" },
+  icons: { icon: "/EVA-studio-logo.png" },
 };
 
 /**

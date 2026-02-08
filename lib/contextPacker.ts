@@ -69,6 +69,8 @@ export interface GetProjectContextOptions {
   maxFiles?: number;
   /** Tamanho máximo total do texto de contexto (caracteres). */
   maxChars?: number;
+  /** Paths a excluir (ex: ["checklist.md"] para não enviar o checklist inteiro ao Analista). */
+  excludePaths?: string[];
 }
 
 const DEFAULT_PROJECT_CONTEXT_MAX_FILES = 50;
@@ -85,9 +87,13 @@ export async function getProjectContext(
 ): Promise<string> {
   const maxFiles = options.maxFiles ?? DEFAULT_PROJECT_CONTEXT_MAX_FILES;
   const maxChars = options.maxChars ?? DEFAULT_PROJECT_CONTEXT_MAX_CHARS;
+  const excludeSet = new Set((options.excludePaths ?? []).map((p) => p.toLowerCase().replace(/\\/g, "/")));
 
   const allPaths = getFilePathsFromTree(fileTree);
-  const relevantPaths = allPaths.filter(isRelevantTextFile).slice(0, maxFiles);
+  const relevantPaths = allPaths
+    .filter((p) => !excludeSet.has(p.toLowerCase().replace(/\\/g, "/")))
+    .filter(isRelevantTextFile)
+    .slice(0, maxFiles);
 
   const lines: string[] = [];
   lines.push("=== Estrutura do projeto (árvore de arquivos) ===");

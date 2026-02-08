@@ -9,8 +9,8 @@
     "storage"
   ],
   "host_permissions": [
-    "http://localhost:3000/*",
-    "http://127.0.0.1:3000/*",
+    "http://localhost:3000/*","http://localhost:3001/*",
+    "http://127.0.0.1:3000/*","http://127.0.0.1:3001/*",
     "https://gemini.google.com/*",
     "https://www.gemini.google.com/*"
   ],
@@ -25,8 +25,8 @@
     },
     {
       "matches": [
-        "http://localhost:3000/*",
-        "http://127.0.0.1:3000/*"
+        "http://localhost:3000/*","http://localhost:3001/*",
+        "http://127.0.0.1:3000/*","http://127.0.0.1:3001/*"
       ],
       "js": ["content-ide.js"],
       "run_at": "document_idle"

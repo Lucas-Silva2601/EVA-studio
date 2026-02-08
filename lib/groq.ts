@@ -6,7 +6,7 @@
 import type { ChecklistAnalysisResult, ValidationResult } from "@/types";
 
 const API_GROQ_NOT_FOUND_MSG =
-  "Erro: Servidor de IA não encontrado. Verifique se a pasta api/groq foi criada corretamente.";
+  "Erro: Servidor de IA não encontrado. Verifique se a rota app/api/groq/route.ts existe e se o Next.js está rodando.";
 
 async function groqFetch(action: string, payload: unknown): Promise<string> {
   const res = await fetch("/api/groq", {
@@ -19,14 +19,20 @@ async function groqFetch(action: string, payload: unknown): Promise<string> {
   try {
     data = (await res.json()) as { result?: string; error?: string };
   } catch {
-    // 404/500 podem não retornar JSON
+    // Resposta não-JSON (ex.: 404 HTML)
   }
 
   if (!res.ok) {
     const message =
-      res.status === 404 || res.status === 500
+      res.status === 404
         ? API_GROQ_NOT_FOUND_MSG
-        : data.error ?? `Erro ${res.status}`;
+        : res.status === 429
+          ? (data.error ?? "Limite de taxa da API excedido. Aguarde e tente novamente.")
+          : res.status === 503
+            ? (data.error ?? "Serviço de IA indisponível. Verifique .env.local (GROQ_API_KEY).")
+            : res.status === 500
+              ? (data.error ?? API_GROQ_NOT_FOUND_MSG)
+              : data.error ?? `Erro ${res.status}`;
     throw new Error(message);
   }
 
@@ -38,6 +44,8 @@ export interface ChatResponse {
   content: string;
   isTruncated: boolean;
 }
+
+export type ChatProvider = "groq" | "gemini";
 
 async function groqFetchChat(payload: unknown): Promise<ChatResponse> {
   const res = await fetch("/api/groq", {
@@ -59,9 +67,15 @@ async function groqFetchChat(payload: unknown): Promise<ChatResponse> {
 
   if (!res.ok) {
     const message =
-      res.status === 404 || res.status === 500
+      res.status === 404
         ? API_GROQ_NOT_FOUND_MSG
-        : data.error ?? `Erro ${res.status}`;
+        : res.status === 429
+          ? (data.error ?? "Limite de taxa da API excedido. Aguarde e tente novamente.")
+          : res.status === 503
+            ? (data.error ?? "Serviço de IA indisponível. Verifique .env.local (GROQ_API_KEY).")
+            : res.status === 500
+              ? (data.error ?? API_GROQ_NOT_FOUND_MSG)
+              : data.error ?? `Erro ${res.status}`;
     throw new Error(message);
   }
 
@@ -71,23 +85,73 @@ async function groqFetchChat(payload: unknown): Promise<ChatResponse> {
   };
 }
 
+/** Remove backticks, marcação JSON e extrai objeto/array da resposta da IA. */
+function cleanJsonResponse(raw: string): string {
+  let s = raw.trim();
+  s = s.replace(/^```(?:json|JSON)?\s*/i, "").replace(/\s*```\s*$/i, "").trim();
+  const startObj = s.indexOf("{");
+  const startArr = s.indexOf("[");
+  const start = startArr >= 0 && (startObj < 0 || startArr < startObj) ? startArr : startObj >= 0 ? startObj : -1;
+  if (start < 0) return s;
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  let quote = "";
+  for (let i = start; i < s.length; i++) {
+    const c = s[i];
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (inString) {
+      if (c === "\\") escape = true;
+      else if (c === quote) inString = false;
+      continue;
+    }
+    if (c === '"' || c === "'") {
+      inString = true;
+      quote = c;
+      continue;
+    }
+    if (c === "{" || c === "[") depth++;
+    else if (c === "}" || c === "]") {
+      depth--;
+      if (depth === 0) return s.slice(start, i + 1);
+    }
+  }
+  return s;
+}
+
 /**
- * Lê o checklist (via Fase 2), envia ao Groq e retorna a próxima tarefa pendente.
+ * Lê o checklist, envia ao Groq e retorna a próxima tarefa pendente (ou array de tarefas da fase).
  */
 export async function analyzeChecklist(
-  checklistContent: string
-): Promise<ChecklistAnalysisResult> {
-  const result = await groqFetch("analyze", { checklistContent });
+  checklistContent: string,
+  targetPhase?: number
+): Promise<ChecklistAnalysisResult | ChecklistAnalysisResult[]> {
   try {
-    const cleaned = result.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
-    const parsed = JSON.parse(cleaned) as ChecklistAnalysisResult;
+    const result = await groqFetch("analyze", { checklistContent, targetPhase });
+    const cleaned = cleanJsonResponse(result);
+    const parsed = JSON.parse(cleaned);
+
+    if (Array.isArray(parsed)) {
+      return parsed.map((p: ChecklistAnalysisResult) => ({
+        taskDescription: p?.taskDescription ?? "",
+        taskLine: p?.taskLine,
+        suggestedFile: p?.suggestedFile,
+        suggestedTech: p?.suggestedTech,
+      }));
+    }
+
+    const single = parsed as ChecklistAnalysisResult;
     return {
-      taskDescription: parsed.taskDescription ?? "",
-      taskLine: parsed.taskLine,
-      suggestedFile: parsed.suggestedFile,
-      suggestedTech: parsed.suggestedTech,
+      taskDescription: single?.taskDescription ?? "",
+      taskLine: single?.taskLine,
+      suggestedFile: single?.suggestedFile,
+      suggestedTech: single?.suggestedTech,
     };
-  } catch {
+  } catch (parseErr) {
+    if (targetPhase != null) return [];
     return {
       taskDescription: "",
       taskLine: undefined,
@@ -113,6 +177,8 @@ export async function validateFileAndTask(payload: {
       approved: Boolean(parsed?.approved),
       reason: parsed?.reason,
       taskLineToMark: parsed?.taskLineToMark,
+      action: parsed?.approved ? "MARK_COMPLETE" : undefined,
+      line: parsed?.line,
     };
   } catch {
     return { approved: false, reason: "Não foi possível validar a resposta." };
@@ -135,16 +201,20 @@ export async function reportErrorToAnalyst(payload: {
 }
 
 /**
- * Chat com o Analista (Groq). Groq não gera código; só analisa e supervisiona.
+ * Chat com o Analista (Groq ou Gemini). A IA orquestra; não gera código.
  * projectId identifica o projeto nesta conversa (ex.: nome da pasta).
  */
 export async function chatWithAnalyst(payload: {
+  /** groq (padrão) ou gemini */
+  provider?: ChatProvider;
   messages: Array<{ role: "user" | "assistant"; content: string }>;
   /** Identificador do projeto (ex.: nome da pasta) para o Analista identificar a conversa. */
   projectId: string;
   projectContext?: string | null;
   openFileContext?: { path: string; content: string } | null;
   checklistContext?: string | null;
+  /** Imagens em Base64 (apenas Gemini; Groq não suporta). */
+  images?: Array<{ base64: string; mimeType: string }>;
 }): Promise<ChatResponse> {
   const response = await groqFetchChat(payload);
   return {
@@ -173,14 +243,26 @@ export async function chatToChecklistTasks(payload: {
 }
 
 /**
- * Orquestrador: gera o prompt para enviar ao Gemini (EVA Bridge). Fase X + tópico atual.
+ * Orquestrador: gera o prompt para enviar ao Gemini (EVA Bridge). Fase X + tópico(s) atual(is).
+ * phaseNumber nunca deve ser estático: use getCurrentPhaseFromChecklist(checklistContent) quando possível.
+ * taskDescriptions: quando passado, gera prompt para fase completa (todos os subtópicos em uma resposta).
  */
 export async function getPromptForGemini(payload: {
-  phaseNumber: number;
+  phaseNumber: number | string;
   taskDescription: string;
+  taskDescriptions?: string[];
   projectContext?: string | null;
+  projectDescription?: string | null;
 }): Promise<string> {
-  const result = await groqFetch("prompt_for_gemini", payload);
+  const phaseNum = Number(payload.phaseNumber);
+  const phase = Number.isFinite(phaseNum) && phaseNum >= 1 ? phaseNum : 1;
+  const result = await groqFetch("prompt_for_gemini", {
+    phaseNumber: phase,
+    taskDescription: payload.taskDescription,
+    taskDescriptions: payload.taskDescriptions,
+    projectContext: payload.projectContext ?? null,
+    projectDescription: payload.projectDescription ?? null,
+  });
   return result.trim();
 }
 

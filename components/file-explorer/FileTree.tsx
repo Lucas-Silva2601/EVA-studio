@@ -1,7 +1,16 @@
 "use client";
 
-import { ChevronRight, ChevronDown, FileCode, Folder, FolderOpen, Trash2 } from "lucide-react";
-import { useState } from "react";
+import {
+  ChevronRight,
+  ChevronDown,
+  FileCode,
+  FilePlus,
+  Folder,
+  FolderOpen,
+  FolderPlus,
+  Trash2,
+} from "lucide-react";
+import { useState, useRef, useEffect } from "react";
 import type { FileNode } from "@/types";
 import { useIdeState } from "@/hooks/useIdeState";
 import { getLanguageFromFilename } from "@/lib/utils";
@@ -141,16 +150,51 @@ function TreeNode({ node, depth }: TreeNodeProps) {
   );
 }
 
+/** Tipo de criação pendente (novo arquivo ou nova pasta) na raiz. */
+type PendingCreate = { type: "file" | "directory"; basePath: string };
+
 /**
- * Árvore de arquivos na sidebar. Exibe "Nenhuma pasta selecionada" quando fileTree está vazio.
+ * Árvore de arquivos na sidebar. Cabeçalho com botões Novo Arquivo / Nova Pasta e input temporário.
  */
 export function FileTree() {
-  const { fileTree, folderName } = useIdeState();
+  const { fileTree, folderName, createEntryInProject } = useIdeState();
+  const [pendingCreate, setPendingCreate] = useState<PendingCreate | null>(null);
+  const [inputValue, setInputValue] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (pendingCreate) {
+      setInputValue("");
+      inputRef.current?.focus();
+    }
+  }, [pendingCreate]);
+
+  const handleConfirmCreate = async () => {
+    if (!pendingCreate || !inputValue.trim()) {
+      setPendingCreate(null);
+      return;
+    }
+    const name = inputValue.trim();
+    await createEntryInProject(pendingCreate.basePath, name, pendingCreate.type);
+    setPendingCreate(null);
+    setInputValue("");
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleConfirmCreate();
+    } else if (e.key === "Escape") {
+      setPendingCreate(null);
+      setInputValue("");
+      inputRef.current?.blur();
+    }
+  };
 
   if (fileTree.length === 0) {
     return (
       <div
-        className="p-4 text-center text-sm text-gray-500"
+        className="p-4 text-center text-sm text-ds-text-muted-light dark:text-ds-text-muted"
         role="status"
         aria-live="polite"
       >
@@ -162,10 +206,62 @@ export function FileTree() {
   }
 
   return (
-    <div className="py-2" role="tree" aria-label="Explorador de arquivos">
-      {fileTree.map((node) => (
-        <TreeNode key={node.path} node={node} depth={0} />
-      ))}
+    <div className="flex flex-col min-h-0" role="tree" aria-label="Explorador de arquivos">
+      <div className="flex items-center justify-end gap-0.5 px-2 py-1 border-b border-ds-border-light dark:border-ds-border shrink-0">
+        <div className="flex items-center gap-0.5">
+          <button
+            type="button"
+            onClick={() => setPendingCreate({ type: "file", basePath: "" })}
+            disabled={!!pendingCreate}
+            className="p-1.5 rounded text-ds-text-secondary-light dark:text-ds-text-secondary hover:bg-ds-surface-hover-light dark:hover:bg-ds-surface-hover hover:text-ds-accent-neon focus:outline-none focus-visible:ring-1 focus-visible:ring-ds-accent-neon disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Novo arquivo"
+            aria-label="Novo arquivo"
+          >
+            <FilePlus className="w-4 h-4" aria-hidden />
+          </button>
+          <button
+            type="button"
+            onClick={() => setPendingCreate({ type: "directory", basePath: "" })}
+            disabled={!!pendingCreate}
+            className="p-1.5 rounded text-ds-text-secondary-light dark:text-ds-text-secondary hover:bg-ds-surface-hover-light dark:hover:bg-ds-surface-hover hover:text-ds-accent-neon focus:outline-none focus-visible:ring-1 focus-visible:ring-ds-accent-neon disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Nova pasta"
+            aria-label="Nova pasta"
+          >
+            <FolderPlus className="w-4 h-4" aria-hidden />
+          </button>
+        </div>
+      </div>
+      {pendingCreate && (
+        <div
+          className="flex items-center gap-1.5 px-2 py-1 border-b border-ds-border-light dark:border-ds-border bg-ds-surface-hover-light/50 dark:bg-ds-surface-hover/50 shrink-0"
+          style={{ paddingLeft: 12 }}
+        >
+          {pendingCreate.type === "directory" ? (
+            <Folder className={ICON_CLASS} aria-hidden />
+          ) : (
+            <FileCode className={ICON_CLASS} aria-hidden />
+          )}
+          <input
+            ref={inputRef}
+            type="text"
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            onKeyDown={handleKeyDown}
+            onBlur={() => {
+              if (inputValue.trim()) handleConfirmCreate();
+              else setPendingCreate(null);
+            }}
+            placeholder={pendingCreate.type === "directory" ? "Nome da pasta" : "Nome do arquivo"}
+            className="flex-1 min-w-0 rounded bg-ds-bg-primary-light dark:bg-ds-bg-primary border border-ds-border-light dark:border-ds-border px-2 py-0.5 text-sm text-ds-text-primary-light dark:text-ds-text-primary placeholder-ds-text-muted-light dark:placeholder-ds-text-muted focus:outline-none focus-visible:ring-1 focus-visible:ring-ds-accent-neon"
+            aria-label={pendingCreate.type === "directory" ? "Nome da pasta" : "Nome do arquivo"}
+          />
+        </div>
+      )}
+      <div className="py-2 min-h-0 overflow-auto">
+        {fileTree.map((node) => (
+          <TreeNode key={node.path} node={node} depth={0} />
+        ))}
+      </div>
     </div>
   );
 }

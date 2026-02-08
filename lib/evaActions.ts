@@ -1,11 +1,19 @@
 /**
  * Parser de comandos EVA_ACTION nas respostas do Groq (Engenheiro Chefe).
- * O Groq pode pedir exclusão ou movimentação de arquivos após o Gemini gerar código.
+ * Criação (CREATE_FILE, CREATE_DIRECTORY) é executada silenciosamente; deleção exige aprovação na UI.
  */
 
-export type EvaActionDelete = { action: "DELETE_FILE"; path: string };
+export type EvaActionCreateFile = { action: "CREATE_FILE"; path: string; content?: string };
+export type EvaActionCreateDir = { action: "CREATE_DIRECTORY"; path: string };
+export type EvaActionDeleteFile = { action: "DELETE_FILE"; path: string };
+export type EvaActionDeleteFolder = { action: "DELETE_FOLDER"; path: string };
 export type EvaActionMove = { action: "MOVE_FILE"; from: string; to: string };
-export type EvaAction = EvaActionDelete | EvaActionMove;
+export type EvaAction =
+  | EvaActionCreateFile
+  | EvaActionCreateDir
+  | EvaActionDeleteFile
+  | EvaActionDeleteFolder
+  | EvaActionMove;
 
 const EVA_ACTION_REGEX = /\[EVA_ACTION\]\s*(\{[^}]+\})/gi;
 
@@ -19,8 +27,18 @@ export function parseEvaActions(content: string): EvaAction[] {
     try {
       const obj = JSON.parse(match[1].trim()) as Record<string, unknown>;
       const act = obj?.action as string;
-      if (act === "DELETE_FILE" && typeof obj.path === "string") {
-        actions.push({ action: "DELETE_FILE", path: obj.path.trim() });
+      if (act === "CREATE_FILE" && typeof obj.path === "string") {
+        actions.push({
+          action: "CREATE_FILE",
+          path: (obj.path as string).trim(),
+          content: typeof obj.content === "string" ? obj.content : undefined,
+        });
+      } else if (act === "CREATE_DIRECTORY" && typeof obj.path === "string") {
+        actions.push({ action: "CREATE_DIRECTORY", path: (obj.path as string).trim() });
+      } else if (act === "DELETE_FILE" && typeof obj.path === "string") {
+        actions.push({ action: "DELETE_FILE", path: (obj.path as string).trim() });
+      } else if (act === "DELETE_FOLDER" && typeof obj.path === "string") {
+        actions.push({ action: "DELETE_FOLDER", path: (obj.path as string).trim() });
       } else if (act === "MOVE_FILE" && typeof obj.from === "string" && typeof obj.to === "string") {
         actions.push({
           action: "MOVE_FILE",

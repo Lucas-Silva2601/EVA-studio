@@ -8,6 +8,7 @@ import { EditorArea } from "@/components/layout/EditorArea";
 import { BottomPanel } from "@/components/layout/BottomPanel";
 import { ChatPanel } from "@/components/layout/ChatPanel";
 import { DiffReviewModal } from "@/components/layout/DiffReviewModal";
+import { DeletionModal } from "@/components/layout/DeletionModal";
 import { GenesisQueuePanel } from "@/components/layout/GenesisQueuePanel";
 
 /**
@@ -35,6 +36,7 @@ export default function HomePage() {
           <ChatPanel />
         </main>
         <DiffReviewModal />
+        <DeletionModal />
         <GenesisQueuePanel />
       </div>
       </IdeStateProvider>

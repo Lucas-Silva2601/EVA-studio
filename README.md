@@ -53,13 +53,15 @@ npm install
 ### 2. Configurar a API Groq (obrigatório para o loop)
 
 1. Crie uma conta em [Groq Cloud](https://console.groq.com) e gere uma **API Key**.
-2. Na raiz do projeto, crie o arquivo `.env.local` (não versionado):
+2. (Opcional) Para usar Gemini como Analista no lugar do Groq: crie uma API Key em [Google AI Studio](https://aistudio.google.com/apikey).
+3. Na raiz do projeto, crie o arquivo `.env.local` (não versionado):
 
    ```
    GROQ_API_KEY=sua_chave_aqui
+   GEMINI_API_KEY=sua_chave_gemini   # opcional: permite escolher Gemini no seletor do chat
    ```
 
-A chave é usada **apenas no servidor** (rotas `/api/groq`) e nunca é exposta no frontend.
+As chaves são usadas **apenas no servidor** (rotas `/api/groq`) e nunca são expostas no frontend. No painel de chat, use o seletor "IA: Groq | Gemini" para alternar entre os provedores.
 
 ### 3. Subir a IDE
 

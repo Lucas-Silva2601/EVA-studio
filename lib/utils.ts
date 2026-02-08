@@ -3,6 +3,26 @@
  */
 
 /**
+ * Renomeia arquivo .txt para extensão correta quando o conteúdo é código (JS, HTML, CSS).
+ * Regra: se o Gemini retornar .txt com código, renomear antes de propor ao usuário.
+ */
+export function fixTxtFilenameIfCode(
+  filename: string,
+  content: string
+): string {
+  const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+  if (ext !== "txt") return filename;
+  const slice = content.trim().slice(0, 500);
+  if (/<!DOCTYPE\s+html|<html[\s>]|<head[\s>]|<body[\s>]/i.test(slice))
+    return filename.replace(/\.txt$/i, ".html");
+  if (/\bfunction\s*\(|\bconst\s+\w+\s*=|=>\s*\{|import\s+.*from|export\s+(default|function|const)/.test(slice))
+    return filename.replace(/\.txt$/i, ".js");
+  if (/\{[^}]*:[^}]*\}|@import|@media|:\s*[\d.#\w]+\s*;/.test(slice))
+    return filename.replace(/\.txt$/i, ".css");
+  return filename;
+}
+
+/**
  * Retorna a extensão do arquivo para mapear linguagem do Monaco.
  */
 export function getLanguageFromFilename(filename: string): string {

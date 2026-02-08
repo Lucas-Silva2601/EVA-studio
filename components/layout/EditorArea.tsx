@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { X, Save, Check } from "lucide-react";
+import { X, Save, Check, Globe, Square } from "lucide-react";
 import { useIdeState } from "@/hooks/useIdeState";
 import { useTheme } from "@/hooks/useTheme";
 import { MonacoWrapper } from "@/components/editor/MonacoWrapper";
@@ -17,11 +17,14 @@ export function EditorArea() {
     setOpenFiles,
     closeFile,
     saveCurrentFile,
+    previewUrl,
+    startLivePreview,
   } = useIdeState();
 
   const activeFile = openFiles.find((f) => f.path === activeFilePath);
   const { theme } = useTheme();
   const [savedFeedback, setSavedFeedback] = useState(false);
+  const [previewStarting, setPreviewStarting] = useState(false);
 
   const handleSave = useCallback(async () => {
     await saveCurrentFile();
@@ -48,11 +51,24 @@ export function EditorArea() {
   const handleContentChange = useCallback(
     (path: string, value: string) => {
       setOpenFiles((prev) =>
-        prev.map((f) => (f.path === path ? { ...f, content: value } : f))
+        prev.map((f) => (f.path === path ? { ...f, content: value, isDirty: true } : f))
       );
     },
     [setOpenFiles]
   );
+
+  const handleLivePreview = useCallback(async () => {
+    if (previewUrl) {
+      window.open(previewUrl, "_blank");
+      return;
+    }
+    setPreviewStarting(true);
+    try {
+      await startLivePreview();
+    } finally {
+      setPreviewStarting(false);
+    }
+  }, [previewUrl, startLivePreview]);
 
   if (openFiles.length === 0) {
     return (
@@ -93,21 +109,47 @@ export function EditorArea() {
               onClick={() => setActiveFilePath(file.path)}
             >
               <span className="truncate text-sm">{file.name}</span>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  closeFile(file.path);
-                }}
-                className="p-0.5 rounded hover:bg-white/10 focus:outline-none focus-visible:ring-1 focus-visible:ring-ds-accent-neon opacity-70 group-hover:opacity-100"
-                aria-label={`Fechar ${file.name}`}
-              >
-                <X className="w-3.5 h-3.5" aria-hidden />
-              </button>
+              <span className="shrink-0 flex items-center w-4 h-4 justify-center">
+                {file.isDirty && (
+                  <span
+                    className="w-2 h-2 rounded-full bg-white group-hover:hidden"
+                    aria-hidden
+                    title="Alterações não salvas"
+                  />
+                )}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    closeFile(file.path);
+                  }}
+                  className={`p-0.5 rounded hover:bg-white/10 focus:outline-none focus-visible:ring-1 focus-visible:ring-ds-accent-neon ${
+                    file.isDirty ? "opacity-0 group-hover:opacity-100" : "opacity-70 group-hover:opacity-100"
+                  } transition-opacity`}
+                  aria-label={`Fechar ${file.name}`}
+                >
+                  <X className="w-3.5 h-3.5" aria-hidden />
+                </button>
+              </span>
             </div>
           );
         })}
         </div>
+        <button
+          type="button"
+          onClick={() => handleLivePreview()}
+          disabled={previewStarting}
+          className={`flex items-center gap-2 px-3 py-2 shrink-0 text-sm focus:outline-none focus-visible:ring-1 focus-visible:ring-ds-accent-neon ${
+            previewUrl
+              ? "text-ds-accent-light dark:text-ds-accent-neon bg-ds-accent-light/20 dark:bg-ds-accent-neon/20"
+              : "text-ds-text-secondary-light dark:text-ds-text-secondary hover:text-ds-accent-light dark:hover:text-ds-accent-neon hover:bg-ds-surface-hover-light dark:hover:bg-ds-surface-hover disabled:opacity-50"
+          }`}
+          aria-label={previewUrl ? "Abrir Live Preview em nova aba" : "Abrir Live Preview"}
+          title={previewUrl ? "Abrir Live Preview em nova aba" : "Live Preview"}
+        >
+          <Globe className="w-4 h-4" aria-hidden />
+          {previewStarting ? "Iniciando…" : previewUrl ? "Abrir Preview" : "Live Preview"}
+        </button>
         <button
           type="button"
           onClick={() => handleSave()}

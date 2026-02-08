@@ -14,6 +14,8 @@ export interface OpenFile {
   name: string;
   content: string;
   language?: string;
+  /** true quando há alterações não salvas */
+  isDirty?: boolean;
 }
 
 export type OutputMessage = {
@@ -41,6 +43,10 @@ export interface ValidationResult {
   reason?: string;
   /** Linha do checklist a ser atualizada ([ ] -> [x]). */
   taskLineToMark?: string;
+  /** Quando aprovado, a IDE deve marcar a tarefa no checklist. */
+  action?: "MARK_COMPLETE";
+  /** Número da linha (1-based) no checklist.md para marcar; opcional se taskLineToMark estiver presente. */
+  line?: number;
 }
 
 /** Estado do loop de automação (Executar próxima tarefa). */

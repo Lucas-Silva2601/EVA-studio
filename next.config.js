@@ -2,16 +2,21 @@
 const nextConfig = {
   reactStrictMode: true,
   async rewrites() {
-    return [{ source: "/favicon.ico", destination: "/icon" }];
+    return [{ source: "/favicon.ico", destination: "/EVA-studio-logo.png" }];
   },
-  // Fase 8: WebContainers exigem cross-origin isolation (SharedArrayBuffer)
   async headers() {
     return [
       {
-        source: "/:path*",
+        source: "/(.*)",
         headers: [
-          { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
-          { key: "Cross-Origin-Embedder-Policy", value: "require-corp" },
+          {
+            key: "Cross-Origin-Embedder-Policy",
+            value: "require-corp",
+          },
+          {
+            key: "Cross-Origin-Opener-Policy",
+            value: "same-origin",
+          },
         ],
       },
     ];

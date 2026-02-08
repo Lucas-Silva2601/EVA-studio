@@ -7,6 +7,7 @@
  */
 
 import type { FileNode } from "@/types";
+import { normalizeTaskLine, stripMarkdownFormatting } from "@/lib/checklistPhase";
 
 /** Pastas ignoradas na listagem (configurável). */
 export const DEFAULT_IGNORE_DIRS = [
@@ -128,6 +129,42 @@ export async function createFileWithContent(
 }
 
 /**
+ * Cria uma nova pasta (e pastas intermediárias se necessário) via getDirectoryHandle(..., { create: true }).
+ */
+export async function createDirectory(
+  rootHandle: FileSystemDirectoryHandle,
+  relativePath: string
+): Promise<void> {
+  const parts = relativePath.replace(/^\//, "").split("/").filter(Boolean);
+  if (parts.length === 0) throw new Error("Caminho inválido");
+
+  let current = rootHandle;
+  for (const part of parts) {
+    current = await current.getDirectoryHandle(part, { create: true });
+  }
+}
+
+/**
+ * Cria um novo arquivo ou pasta na raiz ou em um caminho base.
+ * @param type - "file" usa createFileWithContent (conteúdo vazio); "directory" usa createDirectory.
+ */
+export async function createEntry(
+  rootHandle: FileSystemDirectoryHandle,
+  basePath: string,
+  name: string,
+  type: "file" | "directory"
+): Promise<string> {
+  const base = basePath.replace(/^\//, "").trim();
+  const relativePath = base ? `${base}/${name}` : name;
+  if (type === "directory") {
+    await createDirectory(rootHandle, relativePath);
+  } else {
+    await createFileWithContent(rootHandle, relativePath, "");
+  }
+  return relativePath;
+}
+
+/**
  * Verifica se a File System Access API está disponível (contexto seguro).
  */
 export function isFileSystemAccessSupported(): boolean {
@@ -187,8 +224,8 @@ export async function writeChecklist(
 
 /**
  * Escrita atômica do checklist: lê o arquivo, localiza a(s) linha(s) da tarefa, substitui [ ] por [x],
- * grava no disco com fileHandle.createWritable() e só resolve após close().
- * Somente após o close() o loop pode avançar para a próxima tarefa.
+ * grava no disco com fileHandle.createWritable().
+ * A Promise<void> só resolve após createWritable().close() — o loop NÃO avança antes disso.
  * @param taskLineOrLines - linha exata ou texto da tarefa; ou array de linhas (fase).
  */
 export async function updateChecklistOnDisk(
@@ -198,20 +235,37 @@ export async function updateChecklistOnDisk(
   const content = await readChecklist(rootHandle);
   const lines = content.split("\n");
   const toMark = Array.isArray(taskLineOrLines) ? taskLineOrLines : [taskLineOrLines];
-  const trimSet = new Set(toMark.map((l) => l.trim()));
+  const normSet = new Set(toMark.map((l) => normalizeTaskLine(l)));
+  const fuzzyKeys = toMark.map((l) =>
+    stripMarkdownFormatting(l.replace(/^\s*[-–—−]\s*\[\s*[ xX]\s*\]\s*/i, "").trim()).toLowerCase().replace(/\s+/g, " ")
+  );
   let changed = false;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    if (trimSet.has(line.trim()) && /-\s*\[\s*\]\s*/.test(line)) {
-      lines[i] = line.replace(/- \[ \]/, "- [x]");
+    if (!/^\s*[-–—−]\s*\[\s*\]\s*/.test(line)) continue;
+    if (normSet.has(normalizeTaskLine(line))) {
+      lines[i] = line.replace(/\[\s*\]/, "[x]");
+      changed = true;
+      continue;
+    }
+    const lineDesc = stripMarkdownFormatting(
+      line.replace(/^\s*[-–—−]\s*\[\s*[ xX]\s*\]\s*/i, "").trim()
+    ).toLowerCase().replace(/\s+/g, " ");
+    if (fuzzyKeys.some((key) => key.length > 2 && (lineDesc.includes(key) || key.includes(lineDesc)))) {
+      lines[i] = line.replace(/\[\s*\]/, "[x]");
       changed = true;
     }
   }
   if (!changed && !Array.isArray(taskLineOrLines)) {
-    const taskTrim = taskLineOrLines.trim();
+    const taskDesc = stripMarkdownFormatting(
+      taskLineOrLines.replace(/^\s*[-–—−]\s*\[\s*[ xX]\s*\]\s*/i, "").trim()
+    ).toLowerCase().replace(/\s+/g, " ");
     for (let i = 0; i < lines.length; i++) {
-      if (lines[i].includes(taskTrim) && /-\s*\[\s*\]\s*/.test(lines[i])) {
-        lines[i] = lines[i].replace(/- \[ \]/, "- [x]");
+      const ld = stripMarkdownFormatting(
+        lines[i].replace(/^\s*[-–—−]\s*\[\s*[ xX]\s*\]\s*/i, "").trim()
+      ).toLowerCase();
+      if (/^\s*[-–—−]\s*\[\s*\]\s*/.test(lines[i]) && taskDesc.length > 2 && (ld.includes(taskDesc) || taskDesc.includes(ld))) {
+        lines[i] = lines[i].replace(/\[\s*\]/, "[x]");
         changed = true;
         break;
       }
@@ -222,7 +276,36 @@ export async function updateChecklistOnDisk(
   const fileHandle = await rootHandle.getFileHandle(CHECKLIST_FILENAME);
   const writable = await fileHandle.createWritable();
   await writable.write(newContent);
-  await writable.close();
+  await writable.close(); // Só resolve após close(); garantia de sincronização global
+}
+
+/**
+ * Marca uma tarefa como concluída no checklist pela linha exata.
+ * Retorna Promise<void> que só resolve após createWritable().close() no disco.
+ */
+export async function markTaskAsComplete(
+  rootHandle: FileSystemDirectoryHandle,
+  taskLine: string
+): Promise<void> {
+  await updateChecklistOnDisk(rootHandle, taskLine);
+}
+
+/**
+ * Marca como concluída a tarefa na linha dada (1-based).
+ * Retorna Promise<void> que só resolve após createWritable().close() no disco.
+ */
+export async function markTaskAsCompleteByLine(
+  rootHandle: FileSystemDirectoryHandle,
+  lineNumber: number
+): Promise<void> {
+  const content = await readChecklist(rootHandle);
+  const lines = content.split("\n");
+  const index = lineNumber - 1;
+  if (index < 0 || index >= lines.length) return;
+  if (!/-\s*\[\s*\]\s*/.test(lines[index])) return;
+  lines[index] = lines[index].replace(/- \[ \]/, "- [x]");
+  const newContent = lines.join("\n");
+  await writeChecklist(rootHandle, newContent);
 }
 
 /**

@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import { useRef, useEffect } from "react";
 import type { editor } from "monaco-editor";
+import { ensureMonacoWorkerFromCDN } from "@/lib/monacoWorkers";
 
 const MonacoEditor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
 
@@ -13,26 +14,6 @@ interface MonacoWrapperProps {
   onChange: (value: string) => void;
   /** Tema do editor: "vs-dark" quando dark, "vs" quando light (Fase 6). */
   theme?: "dark" | "light";
-}
-
-/**
- * Configura o Monaco para usar workers via CDN, evitando 404 quando workers
- * locais não estão configurados (ex.: em dev ou build estático).
- */
-function ensureMonacoWorkerFromCDN() {
-  if (typeof window === "undefined") return;
-  const win = window as Window & { MonacoEnvironment?: { getWorkerUrl?: (module: string, label: string) => string } };
-  if (win.MonacoEnvironment?.getWorkerUrl) return;
-  const cdnBase = "https://cdn.jsdelivr.net/npm/monaco-editor@0.44.0/min/vs";
-  win.MonacoEnvironment = {
-    getWorkerUrl(_module: string, label: string) {
-      if (label === "json") return `${cdnBase}/language/json/json.worker.js`;
-      if (label === "css" || label === "scss" || label === "less") return `${cdnBase}/language/css/css.worker.js`;
-      if (label === "html" || label === "handlebars" || label === "razor") return `${cdnBase}/language/html/html.worker.js`;
-      if (label === "typescript" || label === "javascript") return `${cdnBase}/language/typescript/ts.worker.js`;
-      return `${cdnBase}/editor/editor.worker.js`;
-    },
-  };
 }
 
 /**
