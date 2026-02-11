@@ -227,10 +227,11 @@
 
   /**
    * Retorna true se o conteúdo deve ser ignorado (comando solto, snippet de uma linha, etc.).
-   * Esses blocos não são enviados como arquivos para o projeto.
+   * Blocos com FILE: docs/fase são sempre aceitos (plano em fases).
    */
   function isSnippetOrCommand(content) {
     const trimmed = (content || "").trim();
+    if (/^FILE:\s*docs[\\/]fase-/im.test(trimmed) || /^FILE:\s*fase-\d+\.md/im.test(trimmed)) return false;
     if (trimmed.length < MIN_FILE_CONTENT_LENGTH) return true;
     const lines = trimmed.split(/\r?\n/).filter(function (l) { return l.trim().length > 0; });
     if (lines.length === 1) {
@@ -313,6 +314,21 @@
             if (inner.length > 20) addBlock(inner, undefined);
           });
         }
+      });
+    }
+
+    /* Fallback: resposta em markdown renderizado sem <pre>/<code> — procurar FILE: docs/fase ou FILE: fase-N.md no texto. */
+    if (blocks.length === 0) {
+      const root = document.querySelector("main") || document.querySelector("[role='main']") || document.body;
+      const raw = (root && root.textContent) ? root.textContent : document.body.textContent || "";
+      const fileMarker = /FILE:\s*(docs[\\/])?fase-\d+\.md/gi;
+      const parts = raw.split(/(?=FILE:\s*(?:docs[\\/])?fase-\d+\.md)/i);
+      parts.forEach(function (part) {
+        const trimmed = part.trim();
+        if (!trimmed || trimmed.length < 15) return;
+        const firstLine = trimmed.split(/\r?\n/)[0] || "";
+        if (!/FILE:\s*(docs[\\/])?fase-\d+\.md/i.test(firstLine)) return;
+        addBlock(trimmed, "markdown");
       });
     }
 

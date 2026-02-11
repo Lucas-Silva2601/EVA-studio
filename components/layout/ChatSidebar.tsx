@@ -377,11 +377,19 @@ export function ChatSidebar() {
           );
           if (result.ok) {
             const files = result.files ?? (result.filename ? [{ name: result.filename, content: result.code ?? "" }] : []);
-            const docsFiles = files.filter((f) => f.name.startsWith("docs/") || f.name.replace(/\\/g, "/").startsWith("docs/"));
+            const normalized = files.map((f) => ({
+              ...f,
+              path: (() => {
+                const n = f.name.replace(/\\/g, "/").trim();
+                if (n.startsWith("docs/")) return n;
+                if (/^fase-\d+\.md$/i.test(n)) return "docs/" + n;
+                return n;
+              })(),
+            }));
+            const docsFiles = normalized.filter((f) => f.path.startsWith("docs/"));
             if (docsFiles.length > 0) {
               for (const f of docsFiles) {
-                const path = f.name.replace(/\\/g, "/");
-                await createFileWithContent(path, f.content);
+                await createFileWithContent(f.path, f.content);
               }
               await refreshFileTree();
               setGeminiFlowStatus("code_received");

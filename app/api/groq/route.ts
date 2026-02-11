@@ -433,15 +433,16 @@ Retorne APENAS o texto do prompt, algo como: "Fase ${phaseNum}. Tarefas a fazer:
 async function buildCreatePlanPrompt(payload: { userRequest: string; projectDescription?: string | null }): Promise<string> {
   const { userRequest, projectDescription } = payload;
   const desc = (userRequest || projectDescription || "projeto").trim().slice(0, 500);
+  const backtick = "`";
+  const triple = backtick + backtick + backtick;
   return (
     `O usuário quer criar: ${desc}. ` +
     `Sua tarefa é criar um PLANO DE IMPLEMENTAÇÃO em fases. ` +
-    `Gere um arquivo .md para CADA fase na pasta docs/. ` +
-    `Use exatamente os nomes: docs/fase-1.md, docs/fase-2.md, docs/fase-3.md, etc. ` +
-    `Cada arquivo deve conter: um título da fase (ex.: "# Fase 1 – Estrutura base") e uma lista de tarefas no formato markdown: "- [ ] Descrição da tarefa". ` +
-    `No INÍCIO de cada bloco de código que for o conteúdo de um arquivo .md, use a linha: FILE: docs/fase-N.md (substitua N pelo número da fase). ` +
-    `Gere o código completo para todos os arquivos. Exemplo de estrutura: Fase 1 = estrutura HTML/CSS/JS básica; Fase 2 = lógica do jogo; Fase 3 = polish e acessibilidade. ` +
-    `Retorne cada arquivo com FILE: docs/fase-N.md na primeira linha do bloco, seguido do conteúdo markdown do checklist dessa fase.`
+    `Gere um arquivo .md para CADA fase na pasta docs/. Use exatamente: docs/fase-1.md, docs/fase-2.md, docs/fase-3.md, etc. ` +
+    `Cada arquivo: título da fase (ex.: "# Fase 1 – Estrutura base") e lista de tarefas no formato "- [ ] Descrição da tarefa". ` +
+    `OBRIGATÓRIO: Formate cada arquivo como BLOCO DE CÓDIGO entre triple backticks (${triple}). A primeira linha de cada bloco deve ser: FILE: docs/fase-N.md ` +
+    `Exemplo: ${triple} FILE: docs/fase-1.md | # Fase 1 | - [ ] Criar index.html ${triple} e depois ${triple} FILE: docs/fase-2.md | ... ${triple}. ` +
+    `Sem blocos de código entre ${triple} a resposta NÃO será capturada pela ferramenta. Gere TODOS os arquivos de fases em blocos assim.`
   );
 }
 
