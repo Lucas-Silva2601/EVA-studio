@@ -942,7 +942,7 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
           const combined = Array.from(new Set([...(currentTaskLine ? [currentTaskLine] : []), ...fromSavedFiles, ...fromHints]));
           const allToMark =
             phaseLines.length > 0
-              ? Array.from(new Set([...phaseLines, ...combined]))
+              ? phaseLines
               : combined;
           if (allToMark.length > 0) {
             await markChecklistPhaseDone(allToMark);

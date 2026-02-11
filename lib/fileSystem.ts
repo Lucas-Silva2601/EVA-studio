@@ -248,31 +248,29 @@ export async function ensureDocsFolderExists(
 }
 
 /**
- * Garante que checklist.md existe na raiz; cria com template se não existir.
- * Se já existir docs/fase-*.md, não cria checklist.md (a fonte de verdade será docs/).
+ * Não cria mais checklist.md automaticamente.
+ * Apenas verifica se a pasta docs/ tem fases; o checklist vem de docs/fase-*.md ou, se já existir, de checklist.md (não criamos).
  */
 export async function ensureChecklistExists(
-  rootHandle: FileSystemDirectoryHandle
+  _rootHandle: FileSystemDirectoryHandle
 ): Promise<void> {
-  const docPaths = await listDocsPhasePaths(rootHandle);
-  if (docPaths.length > 0) return;
-  try {
-    await rootHandle.getFileHandle(CHECKLIST_FILENAME);
-  } catch {
-    await createFileWithContent(rootHandle, CHECKLIST_FILENAME, CHECKLIST_TEMPLATE);
-  }
+  /* checklist.md não é mais criado automaticamente; o plano em fases fica em docs/fase-N.md */
 }
 
 /**
  * Lê o conteúdo do checklist: se existir docs/fase-1.md (e opcionalmente mais), retorna a agregação;
- * caso contrário retorna o conteúdo de checklist.md na raiz.
+ * caso contrário retorna o conteúdo de checklist.md na raiz, se existir; senão retorna string vazia (não cria arquivo).
  */
 export async function readChecklist(
   rootHandle: FileSystemDirectoryHandle
 ): Promise<string> {
   const docPaths = await listDocsPhasePaths(rootHandle);
   if (docPaths.length > 0) return readChecklistFromDocs(rootHandle);
-  return readFileContent(rootHandle, CHECKLIST_FILENAME);
+  try {
+    return await readFileContent(rootHandle, CHECKLIST_FILENAME);
+  } catch {
+    return "";
+  }
 }
 
 /**
@@ -292,9 +290,10 @@ export async function writeChecklist(
     return;
   }
   try {
+    await rootHandle.getFileHandle(CHECKLIST_FILENAME);
     await writeFileContent(rootHandle, CHECKLIST_FILENAME, content);
   } catch {
-    await createFileWithContent(rootHandle, CHECKLIST_FILENAME, content);
+    /* checklist.md não é mais criado automaticamente; ignorar se o arquivo não existir */
   }
 }
 
@@ -309,12 +308,16 @@ export async function updateChecklistOnDisk(
   taskLineOrLines: string | string[]
 ): Promise<void> {
   const content = await readChecklist(rootHandle);
+  const docPaths = await listDocsPhasePaths(rootHandle);
   const lines = content.split("\n");
   const toMark = Array.isArray(taskLineOrLines) ? taskLineOrLines : [taskLineOrLines];
   const normSet = new Set(toMark.map((l) => normalizeTaskLine(l)));
-  const fuzzyKeys = toMark.map((l) =>
-    stripMarkdownFormatting(l.replace(/^\s*[-–—−]\s*\[\s*[ xX]\s*\]\s*/i, "").trim()).toLowerCase().replace(/\s+/g, " ")
-  );
+  const useFuzzy = docPaths.length === 0;
+  const fuzzyKeys = useFuzzy
+    ? toMark.map((l) =>
+        stripMarkdownFormatting(l.replace(/^\s*[-–—−]\s*\[\s*[ xX]\s*\]\s*/i, "").trim()).toLowerCase().replace(/\s+/g, " ")
+      )
+    : [];
   let changed = false;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -324,15 +327,17 @@ export async function updateChecklistOnDisk(
       changed = true;
       continue;
     }
-    const lineDesc = stripMarkdownFormatting(
-      line.replace(/^\s*[-–—−]\s*\[\s*[ xX]\s*\]\s*/i, "").trim()
-    ).toLowerCase().replace(/\s+/g, " ");
-    if (fuzzyKeys.some((key) => key.length > 2 && (lineDesc.includes(key) || key.includes(lineDesc)))) {
-      lines[i] = line.replace(/\[\s*\]/, "[x]");
-      changed = true;
+    if (useFuzzy) {
+      const lineDesc = stripMarkdownFormatting(
+        line.replace(/^\s*[-–—−]\s*\[\s*[ xX]\s*\]\s*/i, "").trim()
+      ).toLowerCase().replace(/\s+/g, " ");
+      if (fuzzyKeys.some((key) => key.length > 2 && (lineDesc.includes(key) || key.includes(lineDesc)))) {
+        lines[i] = line.replace(/\[\s*\]/, "[x]");
+        changed = true;
+      }
     }
   }
-  if (!changed && !Array.isArray(taskLineOrLines)) {
+  if (!changed && useFuzzy && !Array.isArray(taskLineOrLines)) {
     const taskDesc = stripMarkdownFormatting(
       taskLineOrLines.replace(/^\s*[-–—−]\s*\[\s*[ xX]\s*\]\s*/i, "").trim()
     ).toLowerCase().replace(/\s+/g, " ");
@@ -349,7 +354,6 @@ export async function updateChecklistOnDisk(
   }
   if (!changed) return;
   const newContent = lines.join("\n");
-  const docPaths = await listDocsPhasePaths(rootHandle);
   if (docPaths.length > 0) {
     const sections = newContent.split(/\n(?=## Fase \d+)/i);
     for (let i = 0; i < docPaths.length && i < sections.length; i++) {
@@ -358,10 +362,14 @@ export async function updateChecklistOnDisk(
     }
     return;
   }
-  const fileHandle = await rootHandle.getFileHandle(CHECKLIST_FILENAME);
-  const writable = await fileHandle.createWritable();
-  await writable.write(newContent);
-  await writable.close(); // Só resolve após close(); garantia de sincronização global
+  try {
+    const fileHandle = await rootHandle.getFileHandle(CHECKLIST_FILENAME);
+    const writable = await fileHandle.createWritable();
+    await writable.write(newContent);
+    await writable.close();
+  } catch {
+    /* checklist.md não existe e não é criado automaticamente */
+  }
 }
 
 /**

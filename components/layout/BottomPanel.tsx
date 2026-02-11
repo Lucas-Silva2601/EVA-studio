@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import { ChevronDown, ChevronUp, Trash2 } from "lucide-react";
 import { useResize } from "@/hooks/useResize";
 import { useIdeState } from "@/hooks/useIdeState";
+import { TerminalErrorBoundary } from "@/components/layout/TerminalErrorBoundary";
 
 const TerminalPanel = dynamic(() => import("@/components/layout/TerminalPanel").then((m) => ({ default: m.TerminalPanel })), {
   ssr: false,
@@ -211,11 +212,13 @@ export function BottomPanel() {
             </div>
           )}
           {activeTab === "terminal" && open && (
-            <TerminalPanel
-              isVisible={open}
-              onErrorDetected={() => setTerminalHasError(true)}
-              onCommandComplete={refreshFileTree}
-            />
+            <TerminalErrorBoundary>
+              <TerminalPanel
+                isVisible={open}
+                onErrorDetected={() => setTerminalHasError(true)}
+                onCommandComplete={refreshFileTree}
+              />
+            </TerminalErrorBoundary>
           )}
         </div>
       )}

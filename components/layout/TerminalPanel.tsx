@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { Terminal } from "xterm";
 import "xterm/css/xterm.css";
 import { spawnWebContainerShell } from "@/lib/runtime";
@@ -38,6 +38,32 @@ export function TerminalPanel({
     const term = xtermRef.current;
     if (term) term.clear();
   }, []);
+
+  // Dispose do xterm de forma síncrona ao ocultar/desmontar para reduzir race com Viewport._innerRefresh (dimensions undefined).
+  useLayoutEffect(() => {
+    if (!isVisible) {
+      const term = xtermRef.current;
+      if (term) {
+        try {
+          term.dispose();
+        } catch {
+          /* ignora erro se já disposto */
+        }
+        xtermRef.current = null;
+      }
+    }
+    return () => {
+      const term = xtermRef.current;
+      if (term) {
+        try {
+          term.dispose();
+        } catch {
+          /* ignora */
+        }
+        xtermRef.current = null;
+      }
+    };
+  }, [isVisible]);
 
   useEffect(() => {
     if (!terminalRef.current || xtermRef.current || !isVisible) return;
