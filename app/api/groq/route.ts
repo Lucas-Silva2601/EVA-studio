@@ -194,6 +194,7 @@ Você é o Engenheiro Chefe (Analista/Maestro) da IDE EVA Studio. Você NÃO ger
 PROJETO EM CONTEXTO: **${projectId}**. Todas as mensagens desta conversa referem-se a este projeto.
 
 REGRAS ESTRITAS:
+- PRIMEIRA AÇÃO: Se o usuário disser o que quer CRIAR (ex.: "quero um site do jogo da cobrinha", "criar um blog") e o checklist estiver vazio ou for só o template inicial (ex.: uma única tarefa "Exemplo de tarefa"), responda em uma linha EXATAMENTE: CRIAR_PLANO: [resumo do pedido em até 15 palavras]. Exemplo: "CRIAR_PLANO: site do jogo da cobrinha em fases". A IDE enviará ao Gemini a criação do plano na pasta docs/ (arquivos docs/fase-1.md, docs/fase-2.md, etc.). Não gere código nem checklist ainda.
 - NUNCA escreva blocos de código no chat. NUNCA use \`\`\` com código ou // FILE:.
 - PRIORIDADE OBRIGATÓRIA: Para tarefas do checklist e pedidos de implementação (ex: "fazer fase 1", "implementar X"), você DEVE dizer "Enviando tarefa 'X' para o Gemini..." — a IDE enviará ao Gemini (gemini.google.com) que gerará o código. NÃO use [EVA_ACTION] CREATE_FILE para implementar código.
 - Quando for enviar uma tarefa ao Gemini, diga APENAS algo como: "Enviando tarefa 'Criar Canvas' para o Gemini..." ou "Tarefa 'Configurar servidor' enviada ao Gemini. Aguarde o código."
@@ -366,7 +367,7 @@ Regras:
   ]);
 }
 
-/** Orquestrador: gera o prompt para enviar ao Gemini (EVA Bridge). APENAS fase atual + taskDescriptions. Sem checklist nem contextos desnecessários. */
+/** Orquestrador: gera o prompt para enviar ao Gemini (EVA Bridge). Inclui contexto do projeto quando disponível. */
 async function buildPromptForGemini(payload: {
   phaseNumber: number;
   taskDescription: string;
@@ -374,7 +375,7 @@ async function buildPromptForGemini(payload: {
   projectContext?: string | null;
   projectDescription?: string | null;
 }): Promise<string> {
-  const { phaseNumber, taskDescription, taskDescriptions, projectDescription } = payload;
+  const { phaseNumber, taskDescription, taskDescriptions, projectContext, projectDescription } = payload;
   const phaseNum = Number(phaseNumber);
   if (isNaN(phaseNum) || phaseNum < 1) {
     throw new Error(`phaseNumber inválido no payload: ${phaseNumber}. Deve ser um número >= 1.`);
@@ -406,7 +407,7 @@ REGRAS ESTRITAS:
 
   const userPrompt = `Gere o prompt para o Gemini. Formato EXATAMENTE assim (plaintext, sem código):
 
-Contexto: ${contextProjeto}
+Contexto do projeto: ${contextProjeto}
 Fase Atual: ${phaseNum}
 
 TAREFAS:
@@ -414,10 +415,34 @@ ${tasksBlock}
 
 Retorne APENAS o texto do prompt, algo como: "Fase ${phaseNum}. Tarefas a fazer: 1) [tarefa1], 2) [tarefa2], ... Gere o código completo para todos os itens. Use FILE: nome.ext para cada arquivo." SEM NENHUM código HTML, CSS ou JS.`;
 
-  return callGroq([
+  const groqPrompt = await callGroq([
     { role: "system", content: systemPrompt },
     { role: "user", content: userPrompt },
   ]);
+
+  const contextForGemini = projectContext?.trim()
+    ? `\n\n--- CONTEXTO DO PROJETO (estrutura e conteúdo dos arquivos; use como referência) ---\n${projectContext.slice(0, 28000)}\n--- Fim do contexto ---`
+    : "";
+  return groqPrompt.trim() + contextForGemini;
+}
+
+/**
+ * Gera o prompt para o Gemini criar o plano em fases na pasta docs/ (primeira ação quando o usuário diz o que quer criar).
+ * Retorna texto que será enviado ao Gemini; o Gemini deve gerar docs/fase-1.md, docs/fase-2.md, etc.
+ */
+async function buildCreatePlanPrompt(payload: { userRequest: string; projectDescription?: string | null }): Promise<string> {
+  const { userRequest, projectDescription } = payload;
+  const desc = (userRequest || projectDescription || "projeto").trim().slice(0, 500);
+  return (
+    `O usuário quer criar: ${desc}. ` +
+    `Sua tarefa é criar um PLANO DE IMPLEMENTAÇÃO em fases. ` +
+    `Gere um arquivo .md para CADA fase na pasta docs/. ` +
+    `Use exatamente os nomes: docs/fase-1.md, docs/fase-2.md, docs/fase-3.md, etc. ` +
+    `Cada arquivo deve conter: um título da fase (ex.: "# Fase 1 – Estrutura base") e uma lista de tarefas no formato markdown: "- [ ] Descrição da tarefa". ` +
+    `No INÍCIO de cada bloco de código que for o conteúdo de um arquivo .md, use a linha: FILE: docs/fase-N.md (substitua N pelo número da fase). ` +
+    `Gere o código completo para todos os arquivos. Exemplo de estrutura: Fase 1 = estrutura HTML/CSS/JS básica; Fase 2 = lógica do jogo; Fase 3 = polish e acessibilidade. ` +
+    `Retorne cada arquivo com FILE: docs/fase-N.md na primeira linha do bloco, seguido do conteúdo markdown do checklist dessa fase.`
+  );
 }
 
 /** Pergunta ao Analista: "Qual o nome deste arquivo?" quando a resposta do Gemini não contém FILE: na 1ª/2ª linha. */
@@ -602,6 +627,14 @@ export async function POST(request: NextRequest) {
       case "suggest_filename": {
         const p = payload as { content?: string };
         result = await suggestFilename({ content: p?.content ?? "" });
+        break;
+      }
+      case "create_plan": {
+        const p = payload as { userRequest?: string; projectDescription?: string | null };
+        result = await buildCreatePlanPrompt({
+          userRequest: p?.userRequest ?? "",
+          projectDescription: p?.projectDescription ?? null,
+        });
         break;
       }
       default:

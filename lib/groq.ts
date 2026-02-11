@@ -267,6 +267,18 @@ export async function getPromptForGemini(payload: {
 }
 
 /**
+ * Gera o prompt para enviar ao Gemini para criar o plano em fases (docs/fase-1.md, docs/fase-2.md, ...).
+ * Usado quando o usuário diz o que quer criar e ainda não existe plano em docs/.
+ */
+export async function getCreatePlanPrompt(payload: {
+  userRequest: string;
+  projectDescription?: string | null;
+}): Promise<string> {
+  const result = await groqFetch("create_plan", payload);
+  return result.trim();
+}
+
+/**
  * Quando a resposta do Gemini não contém FILE: na 1ª/2ª linha, pergunta ao Analista: "Qual o nome deste arquivo?"
  */
 export async function suggestFilename(content: string): Promise<string> {

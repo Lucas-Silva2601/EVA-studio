@@ -82,4 +82,10 @@ Seletores (podem mudar com atualizações do Gemini – inspecione a página):
 - **Botão de envio**: `button[type="submit"]`, `button[aria-label*="Send"]`, etc.
 - **Resposta completa**: ícone "Stop" some OU botão "Share" aparece → então extrair código.
 
-A extensão usa debounce e timeout (2 min) para considerar o streaming encerrado antes de extrair os blocos `<pre><code>` e a convenção `FILE: path/filename`.
+A extensão usa debounce e timeout (90 s) para considerar o streaming encerrado antes de extrair os blocos `<pre><code>` e a convenção `FILE: path/filename`. A detecção de fim de resposta não depende mais só do botão "Share": quando o ícone "Stop" some (streaming acabou), a captura é feita após 2,5 s.
+
+### Se os arquivos não aparecerem na IDE
+
+1. **Timeout na IDE** – A extensão envia resposta em até 90 s. Se o Gemini demorar mais para responder, recarregue a aba do Gemini (F5), espere a resposta terminar **por completo** e use de novo "Fase" ou envie o prompt.
+2. **Nenhum código capturado** – A interface do Gemini (gemini.google.com) pode ter mudado. Abra o **Console** (F12) na **aba do Gemini** e procure por mensagens `[EVA-Gemini]`. Se aparecer "0 bloco(s) de código", os seletores em `content-gemini.js` (ex.: `pre`, `code`, "Stop", "Share") podem precisar ser atualizados inspecionando o DOM atual.
+3. **Sempre recarregue a aba do Gemini (F5)** depois de instalar ou atualizar a extensão, para o content script ser injetado.

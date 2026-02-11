@@ -257,75 +257,144 @@
   }
 
   /**
-   * Extrai blocos de código da página (pre/code).
+   * Extrai blocos de código da página. Múltiplas estratégias para compatibilidade com mudanças na UI do Gemini.
    */
   function extractCodeBlocks() {
     const blocks = [];
-    const pres = document.querySelectorAll("pre");
-    pres.forEach((pre) => {
+    const seen = new Set();
+
+    function addBlock(code, language) {
+      const key = (code || "").trim().slice(0, 80);
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      blocks.push({ code: (code || "").trim(), language: language || undefined });
+    }
+
+    document.querySelectorAll("pre").forEach((pre) => {
       const code = pre.querySelector("code");
       const text = code ? code.textContent : pre.textContent;
-      if (text && text.trim()) {
-        const lang = code?.className?.match(/language-(\w+)/)?.[1] || "";
-        blocks.push({ code: text.trim(), language: lang || undefined });
+      if (text && text.trim().length > 10) {
+        const lang = (code && code.className && code.className.match(/language-(\w+)/)) ? code.className.match(/language-(\w+)/)[1] : "";
+        addBlock(text, lang);
       }
     });
+
     if (blocks.length === 0) {
-      document.querySelectorAll("code").forEach((code) => {
-        const text = code.textContent?.trim();
-        if (text && text.length > 20) blocks.push({ code: text, language: undefined });
+      document.querySelectorAll("code").forEach((el) => {
+        const text = el.textContent?.trim();
+        if (text && text.length > 20) addBlock(text, undefined);
       });
     }
+
+    if (blocks.length === 0) {
+      document.querySelectorAll('[class*="code-block"], [class*="markdown"], [data-code-block]').forEach((el) => {
+        const pre = el.querySelector("pre") || el;
+        const text = (pre.textContent || el.textContent || "").trim();
+        if (text.length > 20) addBlock(text, undefined);
+      });
+    }
+
+    if (blocks.length === 0) {
+      const allPre = document.querySelectorAll("pre");
+      allPre.forEach((pre) => {
+        const text = (pre.textContent || "").trim();
+        if (text.length > 20) addBlock(text, undefined);
+      });
+    }
+
+    if (blocks.length === 0) {
+      const textNodes = document.querySelectorAll("[class*='message'], [class*='response'], [class*='content']");
+      textNodes.forEach((el) => {
+        const raw = (el.textContent || "").trim();
+        const match = raw.match(/```[\w]*\n([\s\S]*?)```/g);
+        if (match) {
+          match.forEach((m) => {
+            const inner = m.replace(/^```[\w]*\n/, "").replace(/```$/, "").trim();
+            if (inner.length > 20) addBlock(inner, undefined);
+          });
+        }
+      });
+    }
+
     return blocks;
   }
 
-  const DEBOUNCE_MS = 1500;
-  const CAPTURE_TIMEOUT_MS = 120000;
+  const DEBOUNCE_STOP_MS = 2500;
+  const DEBOUNCE_SHARE_MS = 1500;
+  const CAPTURE_TIMEOUT_MS = 90000;
+  const POLL_INTERVAL_MS = 500;
 
   /**
-   * Aguarda: Stop sumir OU Share aparecer; então extrai código (debounce após última mutação).
+   * Aguarda fim da resposta: Stop sumir (streaming acabou) OU Share aparecer.
+   * Não exige Share; assim que Stop some e tivermos blocos (ou após debounce), captura.
    */
   function waitForResponseComplete() {
     return new Promise((resolve) => {
       let debounceTimer = null;
       let timeoutId = null;
+      let lastStopVisible = false;
+      let resolved = false;
+      let observerRef = null;
+      let intervalRef = null;
+
+      function captureAndResolve() {
+        if (resolved) return;
+        resolved = true;
+        if (observerRef) observerRef.disconnect();
+        if (intervalRef) clearInterval(intervalRef);
+        clearTimeout(timeoutId);
+        if (debounceTimer) clearTimeout(debounceTimer);
+        const blocks = extractCodeBlocks();
+        console.log("[EVA-Gemini] Captura concluída: " + blocks.length + " bloco(s) de código.");
+        resolve(blocks);
+      }
 
       function checkAndCapture() {
-        if (isStopVisible()) return;
-        if (!isShareVisible()) {
+        if (resolved) return;
+        const stopNow = isStopVisible();
+        const shareNow = isShareVisible();
+
+        if (stopNow) {
+          lastStopVisible = true;
+          if (debounceTimer) clearTimeout(debounceTimer);
+          debounceTimer = null;
+          return;
+        }
+
+        if (lastStopVisible || shareNow) {
           const blocks = extractCodeBlocks();
           if (blocks.length > 0) {
-            clearTimeout(timeoutId);
-            resolve(blocks);
+            if (debounceTimer) clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(captureAndResolve, shareNow ? DEBOUNCE_SHARE_MS : DEBOUNCE_STOP_MS);
             return;
           }
         }
-        if (isShareVisible()) {
-          clearTimeout(debounceTimer);
-          debounceTimer = setTimeout(() => {
-            const blocks = extractCodeBlocks();
-            clearTimeout(timeoutId);
-            resolve(blocks);
-          }, DEBOUNCE_MS);
+
+        if (shareNow) {
+          if (debounceTimer) clearTimeout(debounceTimer);
+          debounceTimer = setTimeout(captureAndResolve, DEBOUNCE_SHARE_MS);
         }
       }
 
-      const observer = new MutationObserver(() => {
+      observerRef = new MutationObserver(() => {
         checkAndCapture();
       });
 
-      observer.observe(document.body, {
+      observerRef.observe(document.body, {
         childList: true,
         subtree: true,
         characterData: true,
         characterDataOldValue: true,
       });
 
-      const interval = setInterval(checkAndCapture, 800);
+      intervalRef = setInterval(checkAndCapture, POLL_INTERVAL_MS);
       timeoutId = setTimeout(() => {
-        observer.disconnect();
-        clearInterval(interval);
-        clearTimeout(debounceTimer);
+        if (resolved) return;
+        resolved = true;
+        if (observerRef) observerRef.disconnect();
+        if (intervalRef) clearInterval(intervalRef);
+        if (debounceTimer) clearTimeout(debounceTimer);
+        console.log("[EVA-Gemini] Timeout de captura; extraindo o que houver.");
         resolve(extractCodeBlocks());
       }, CAPTURE_TIMEOUT_MS);
     });
@@ -355,23 +424,29 @@
     try {
       const blocks = await waitForResponseComplete();
       if (blocks.length === 0) {
+        console.warn("[EVA-Gemini] Nenhum bloco de código encontrado na página. Enviando resposta vazia à IDE.");
         sendToBackground("EVA_CODE_CAPTURED", { code: "", files: [] });
       } else {
         const allFiles = blocksToFiles(blocks);
         const files = allFiles.filter(function (f) { return !isSnippetOrCommand(f.content); });
         if (files.length === 0) {
+          console.warn("[EVA-Gemini] Blocos extraídos foram filtrados (snippet/comando). Enviando resposta vazia.");
           sendToBackground("EVA_CODE_CAPTURED", { code: "", files: [] });
-        } else if (files.length === 1) {
-          sendToBackground("EVA_CODE_CAPTURED", {
-            code: files[0].content,
-            filename: files[0].name,
-            files,
-          });
         } else {
-          sendToBackground("EVA_CODE_CAPTURED", { files });
+          console.log("[EVA-Gemini] Enviando " + files.length + " arquivo(s) à IDE: " + files.map(function (f) { return f.name; }).join(", "));
+          if (files.length === 1) {
+            sendToBackground("EVA_CODE_CAPTURED", {
+              code: files[0].content,
+              filename: files[0].name,
+              files,
+            });
+          } else {
+            sendToBackground("EVA_CODE_CAPTURED", { files });
+          }
         }
       }
     } catch (e) {
+      console.error("[EVA-Gemini] Erro ao capturar código:", e);
       sendToBackground("EVA_ERROR", { message: e?.message ?? "Erro ao extrair código." });
     }
   }

@@ -172,9 +172,12 @@ export function isFileSystemAccessSupported(): boolean {
 }
 
 /**
- * Nome do arquivo central de controle do projeto.
+ * Nome do arquivo central de controle do projeto (quando não se usa docs/).
  */
 export const CHECKLIST_FILENAME = "checklist.md";
+
+/** Pasta onde ficam os checklists por fase (docs/fase-1.md, docs/fase-2.md, ...). */
+export const DOCS_FOLDER = "docs";
 
 /**
  * Template mínimo para checklist.md quando criado pela primeira vez.
@@ -187,11 +190,72 @@ export const CHECKLIST_TEMPLATE = `# Checklist – Projeto
 `;
 
 /**
+ * Lista os arquivos docs/fase-N.md existentes, ordenados por N (1, 2, 3...).
+ */
+export async function listDocsPhasePaths(
+  rootHandle: FileSystemDirectoryHandle
+): Promise<string[]> {
+  try {
+    const docsHandle = await rootHandle.getDirectoryHandle(DOCS_FOLDER);
+    const names: string[] = [];
+    for await (const [name] of docsHandle.entries()) {
+      const match = /^fase-(\d+)\.md$/i.exec(name);
+      if (match) names.push(`${DOCS_FOLDER}/fase-${match[1]}.md`);
+    }
+    names.sort((a, b) => {
+      const na = parseInt(a.replace(/^.*fase-(\d+)\.md$/i, "$1"), 10);
+      const nb = parseInt(b.replace(/^.*fase-(\d+)\.md$/i, "$1"), 10);
+      return na - nb;
+    });
+    return names;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Lê o checklist agregado a partir da pasta docs/ (docs/fase-1.md, docs/fase-2.md, ...).
+ * Retorna conteúdo no formato "## Fase 1\n\n...\n\n## Fase 2\n\n..." para compatibilidade com getPhaseTaskLines etc.
+ */
+export async function readChecklistFromDocs(
+  rootHandle: FileSystemDirectoryHandle
+): Promise<string> {
+  const paths = await listDocsPhasePaths(rootHandle);
+  if (paths.length === 0) return "";
+  const parts: string[] = [];
+  for (let i = 0; i < paths.length; i++) {
+    try {
+      const content = await readFileContent(rootHandle, paths[i]);
+      parts.push(`## Fase ${i + 1}\n\n${content.trim()}`);
+    } catch {
+      parts.push(`## Fase ${i + 1}\n\n(erro ao ler arquivo)`);
+    }
+  }
+  return parts.join("\n\n");
+}
+
+/**
+ * Garante que a pasta docs/ existe na raiz.
+ */
+export async function ensureDocsFolderExists(
+  rootHandle: FileSystemDirectoryHandle
+): Promise<void> {
+  try {
+    await rootHandle.getDirectoryHandle(DOCS_FOLDER);
+  } catch {
+    await createDirectory(rootHandle, DOCS_FOLDER);
+  }
+}
+
+/**
  * Garante que checklist.md existe na raiz; cria com template se não existir.
+ * Se já existir docs/fase-*.md, não cria checklist.md (a fonte de verdade será docs/).
  */
 export async function ensureChecklistExists(
   rootHandle: FileSystemDirectoryHandle
 ): Promise<void> {
+  const docPaths = await listDocsPhasePaths(rootHandle);
+  if (docPaths.length > 0) return;
   try {
     await rootHandle.getFileHandle(CHECKLIST_FILENAME);
   } catch {
@@ -200,21 +264,33 @@ export async function ensureChecklistExists(
 }
 
 /**
- * Lê o conteúdo de checklist.md na raiz da pasta aberta.
+ * Lê o conteúdo do checklist: se existir docs/fase-1.md (e opcionalmente mais), retorna a agregação;
+ * caso contrário retorna o conteúdo de checklist.md na raiz.
  */
 export async function readChecklist(
   rootHandle: FileSystemDirectoryHandle
 ): Promise<string> {
+  const docPaths = await listDocsPhasePaths(rootHandle);
+  if (docPaths.length > 0) return readChecklistFromDocs(rootHandle);
   return readFileContent(rootHandle, CHECKLIST_FILENAME);
 }
 
 /**
- * Escreve o conteúdo em checklist.md na raiz.
+ * Escreve o conteúdo do checklist. Se existir docs/fase-*.md, divide o conteúdo por "## Fase N" e grava em cada docs/fase-N.md; senão grava em checklist.md na raiz.
  */
 export async function writeChecklist(
   rootHandle: FileSystemDirectoryHandle,
   content: string
 ): Promise<void> {
+  const docPaths = await listDocsPhasePaths(rootHandle);
+  if (docPaths.length > 0) {
+    const sections = content.split(/\n(?=## Fase \d+)/i);
+    for (let i = 0; i < docPaths.length && i < sections.length; i++) {
+      const body = sections[i].replace(/^## Fase \d+\s*\n+/i, "").trim();
+      await createFileWithContent(rootHandle, docPaths[i], body);
+    }
+    return;
+  }
   try {
     await writeFileContent(rootHandle, CHECKLIST_FILENAME, content);
   } catch {
@@ -273,6 +349,15 @@ export async function updateChecklistOnDisk(
   }
   if (!changed) return;
   const newContent = lines.join("\n");
+  const docPaths = await listDocsPhasePaths(rootHandle);
+  if (docPaths.length > 0) {
+    const sections = newContent.split(/\n(?=## Fase \d+)/i);
+    for (let i = 0; i < docPaths.length && i < sections.length; i++) {
+      const body = sections[i].replace(/^## Fase \d+\s*\n+/i, "").trim();
+      await createFileWithContent(rootHandle, docPaths[i], body);
+    }
+    return;
+  }
   const fileHandle = await rootHandle.getFileHandle(CHECKLIST_FILENAME);
   const writable = await fileHandle.createWritable();
   await writable.write(newContent);
