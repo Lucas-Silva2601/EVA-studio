@@ -940,7 +940,10 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
           const fromHints = findTasksMatchingHints(content, hintsForMatching);
           const currentTaskLine = taskToMark?.taskLine?.trim();
           const combined = Array.from(new Set([...(currentTaskLine ? [currentTaskLine] : []), ...fromSavedFiles, ...fromHints]));
-          const allToMark = combined.length > 0 ? combined : phaseLines;
+          const allToMark =
+            phaseLines.length > 0
+              ? Array.from(new Set([...phaseLines, ...combined]))
+              : combined;
           if (allToMark.length > 0) {
             await markChecklistPhaseDone(allToMark);
             content = await readChecklistFs(directoryHandle);

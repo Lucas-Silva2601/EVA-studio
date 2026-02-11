@@ -670,7 +670,7 @@ export function ChatSidebar() {
       setGeminiFlowStatus("awaiting_gemini");
       try {
         const checklistContent = await readChecklist();
-        const targetPhase = getCurrentPhaseFromChecklist(checklistContent) || phaseNumber;
+        const targetPhase = phaseNumber;
         const allPhaseLines = getPhaseTaskLines(checklistContent, targetPhase);
         const statusByPhase = getTasksByStatus(checklistContent);
         const phaseStatus = statusByPhase[targetPhase];
