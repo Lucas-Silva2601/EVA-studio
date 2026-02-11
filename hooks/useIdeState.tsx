@@ -884,9 +884,10 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
   const rejectDiffReview = useCallback(() => {
     setPendingDiffReview(null);
     setLoopStatus("idle");
+    lastSentTaskLineRef.current = null;
     setConsecutiveFailures((c) => {
       const next = c + 1;
-      addOutputMessage({ type: "info", text: "Alterações rejeitadas. Nenhum arquivo foi gravado." });
+      addOutputMessage({ type: "info", text: "Alterações rejeitadas. Nenhum arquivo foi gravado. Pode reenviar a tarefa ao Gemini." });
       if (next >= 3) {
         addOutputMessage({
           type: "error",

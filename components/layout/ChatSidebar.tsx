@@ -6,7 +6,7 @@ import { ChatInput, type ChatInputImage } from "@/components/layout/ChatInput";
 import { useIdeState } from "@/hooks/useIdeState";
 import { chatWithAnalyst, chatToChecklistTasks, getPromptForGemini, suggestFilename, type ChatProvider } from "@/lib/groq";
 import { getProjectContext } from "@/lib/contextPacker";
-import { getPhaseTaskLines, getPhaseTitles, getFirstPendingTaskLine, getTasksByStatus, determinePhaseFromTask, getCurrentPhaseFromChecklist } from "@/lib/checklistPhase";
+import { getPhaseTaskLines, getPhaseTitles, getFirstPendingTaskLine, getTasksByStatus, determinePhaseFromTask, getCurrentPhaseFromChecklist, getPhaseOfFirstPendingTask } from "@/lib/checklistPhase";
 import { waitForCodeFromExtension, sendPromptToExtension, FILENAME_ASK_GROQ } from "@/lib/messaging";
 import { getChatMessages, saveChatMessages } from "@/lib/indexedDB";
 import { ChatCodeBlock } from "@/components/layout/ChatCodeBlock";
@@ -83,7 +83,6 @@ export function ChatSidebar() {
   const [loading, setLoading] = useState(false);
   const [loadingContinue, setLoadingContinue] = useState(false);
   const [loadingTasks, setLoadingTasks] = useState(false);
-  const [loadingLoop, setLoadingLoop] = useState(false);
   const [loadingGeminiPhase, setLoadingGeminiPhase] = useState(false);
   const [phaseOptions, setPhaseOptions] = useState<{ number: number; title: string }[]>([]);
   const [progress, setProgress] = useState<{ totalPending: number; completedCount: number } | null>(null);
@@ -162,6 +161,14 @@ export function ChatSidebar() {
   const CONTINUATION_PROMPT =
     "Sua resposta anterior foi cortada pelo limite de tokens. Por favor, continue a geração EXATAMENTE de onde você parou. Não repita o contexto inicial, apenas complete o código ou texto pendente.";
 
+  /** Determina a fase real: prioriza getCurrentPhaseFromChecklist para nunca enviar valor estático à API. */
+  const resolvePhase = useCallback((taskLineOrDesc: string, content: string): number => {
+    if (!content?.trim()) return 1;
+    const fromChecklist = getCurrentPhaseFromChecklist(content);
+    const fromTask = determinePhaseFromTask(taskLineOrDesc, content);
+    return fromChecklist >= 1 ? Math.max(fromChecklist, fromTask) : fromTask;
+  }, []);
+
   const handleContinueGenerating = useCallback(async () => {
     if (!lastIsTruncated || loadingContinue || loading) return;
     const lastAssistant = lastMessage?.role === "assistant" ? lastMessage : null;
@@ -190,18 +197,76 @@ export function ChatSidebar() {
         openFileContext,
         checklistContext: checklistContext || undefined,
       });
+      const mergedContent = lastAssistant.content + reply.content;
       setMessages((prev) => {
         const next = [...prev];
         const lastIdx = next.length - 1;
         if (lastIdx >= 0 && next[lastIdx].role === "assistant") {
           next[lastIdx] = {
             ...next[lastIdx],
-            content: next[lastIdx].content + reply.content,
+            content: mergedContent,
             isTruncated: reply.isTruncated,
           };
         }
         return next;
       });
+      executeEvaActions(reply.content);
+      const taskDesc = extractTaskFromGroqReply(mergedContent);
+      if (taskDesc && extensionOnline && directoryHandle) {
+        setGeminiFlowStatus("awaiting_gemini");
+        try {
+          const checklistCtx = checklistContext || (await getChecklistContentForContext());
+          const phaseNum = getPhaseOfFirstPendingTask(checklistCtx) || resolvePhase(taskDesc, checklistCtx);
+          const allPhaseLines = getPhaseTaskLines(checklistCtx, phaseNum);
+          const statusByPhase = getTasksByStatus(checklistCtx);
+          const phaseStatus = statusByPhase[phaseNum];
+          const pendingLines = phaseStatus?.pending ?? allPhaseLines.filter((l) => /^\s*[-–—−]\s*\[\s*\]\s*/.test(l));
+          const taskDescriptions = pendingLines.map((l) => l.replace(/^\s*[-–—−]\s*\[\s*[ x]\s*\]\s*/i, "").trim());
+          addOutputMessage({ type: "info", text: `Resposta completada. Enviando ${taskDescriptions.length} subtópico(s) da Fase ${phaseNum} ao Gemini.` });
+          const prompt = await getPromptForGemini({
+            phaseNumber: phaseNum,
+            taskDescription: taskDescriptions[0] ?? taskDesc,
+            taskDescriptions: taskDescriptions.length >= 1 ? taskDescriptions : undefined,
+            projectContext: null,
+            projectDescription: folderName ? folderName : undefined,
+          });
+          const result = await waitForCodeFromExtension(
+            prompt.trim(),
+            120000,
+            () => addOutputMessage({ type: "warning", text: "Extensão EVA Bridge não detectada." })
+          );
+          if (result.ok) {
+            setGeminiFlowStatus("code_received");
+            let files = result.files ?? (result.filename ? [{ name: result.filename, content: result.code ?? "" }] : []);
+            if (files.some((f) => f.name === FILENAME_ASK_GROQ)) {
+              addOutputMessage({ type: "info", text: "Nome do arquivo não encontrado. Perguntando ao Analista..." });
+              const resolved = await Promise.all(
+                files.map(async (f) =>
+                  f.name === FILENAME_ASK_GROQ
+                    ? { name: await suggestFilename(f.content), content: f.content }
+                    : f
+                )
+              );
+              files = resolved;
+            }
+            if (files.length > 0) {
+              const fixed = files.map((f) => ({
+                filePath: fixTxtFilenameIfCode(f.name, f.content),
+                proposedContent: f.content,
+              }));
+              proposeChangesFromChat(fixed, { phaseLines: pendingLines.length > 0 ? allPhaseLines : undefined });
+              addOutputMessage({ type: "success", text: "Código recebido do Gemini. Revise e clique em Implementar." });
+              getChecklistProgress().then(setProgress);
+            }
+          } else {
+            setGeminiFlowStatus(null);
+            addOutputMessage({ type: "error", text: result.error ?? "Erro ao receber código do Gemini." });
+          }
+        } catch (geminiErr) {
+          setGeminiFlowStatus(null);
+          addOutputMessage({ type: "error", text: geminiErr instanceof Error ? geminiErr.message : "Erro ao enviar ao Gemini." });
+        }
+      }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Erro ao continuar.";
       addOutputMessage({ type: "error", text: errorMsg });
@@ -220,15 +285,23 @@ export function ChatSidebar() {
     activeFile,
     addOutputMessage,
     chatProvider,
+    extensionOnline,
+    getChecklistContentForContext,
+    getPhaseOfFirstPendingTask,
+    resolvePhase,
+    getPhaseTaskLines,
+    getTasksByStatus,
+    getPromptForGemini,
+    waitForCodeFromExtension,
+    suggestFilename,
+    proposeChangesFromChat,
+    fixTxtFilenameIfCode,
+    getChecklistProgress,
+    setProgress,
+    setGeminiFlowStatus,
+    folderName,
+    executeEvaActions,
   ]);
-
-  /** Determina a fase real: prioriza getCurrentPhaseFromChecklist para nunca enviar valor estático à API. */
-  const resolvePhase = useCallback((taskLineOrDesc: string, content: string): number => {
-    if (!content?.trim()) return 1;
-    const fromChecklist = getCurrentPhaseFromChecklist(content);
-    const fromTask = determinePhaseFromTask(taskLineOrDesc, content);
-    return fromChecklist >= 1 ? Math.max(fromChecklist, fromTask) : fromTask;
-  }, []);
 
   /** Extrai a descrição da tarefa quando o Groq responde "Enviando tarefa '...' para o Gemini". */
   const extractTaskFromGroqReply = (content: string): string | null => {
@@ -421,7 +494,7 @@ export function ChatSidebar() {
     if (isProcessing || !nextPendingTask || loading || !directoryHandle || !extensionOnline) return;
     try {
       const checklistContent = await readChecklist();
-      const targetPhase = getCurrentPhaseFromChecklist(checklistContent);
+      const targetPhase = getPhaseOfFirstPendingTask(checklistContent);
       const allPhaseLines = getPhaseTaskLines(checklistContent, targetPhase);
       const statusByPhase = getTasksByStatus(checklistContent);
       const phaseStatus = statusByPhase[targetPhase];
@@ -448,7 +521,7 @@ export function ChatSidebar() {
     setGeminiFlowStatus("awaiting_gemini");
     try {
       const checklistContent = await readChecklist();
-      const targetPhase = getCurrentPhaseFromChecklist(checklistContent);
+      const targetPhase = getPhaseOfFirstPendingTask(checklistContent);
       const allPhaseLines = getPhaseTaskLines(checklistContent, targetPhase);
       const statusByPhase = getTasksByStatus(checklistContent);
       const phaseStatus = statusByPhase[targetPhase];
@@ -492,7 +565,7 @@ export function ChatSidebar() {
           proposedContent: f.content,
         }));
         const checklistContent2 = await readChecklist();
-        const phaseNum2 = getCurrentPhaseFromChecklist(checklistContent2);
+        const phaseNum2 = getPhaseOfFirstPendingTask(checklistContent2);
         const allPhaseLines2 = getPhaseTaskLines(checklistContent2, phaseNum2);
         proposeChangesFromChat(fixed, { phaseLines: allPhaseLines2 });
       }
@@ -528,113 +601,6 @@ export function ChatSidebar() {
     setGeminiFlowStatus,
     proposeChangesFromChat,
     getChecklistProgress,
-    addOutputMessage,
-  ]);
-
-  /** Executar Fase Completa: envia TODAS as tarefas pendentes da fase atual em um único prompt (economia de tokens). */
-  const handleExecutarLoop = useCallback(async () => {
-    if (isProcessing || !directoryHandle || loadingLoop || !extensionOnline) return;
-    setLoadingLoop(true);
-    setGeminiFlowStatus("awaiting_gemini");
-    try {
-      const checklistContent = await readChecklist();
-      const targetPhase = getCurrentPhaseFromChecklist(checklistContent);
-      const allPhaseLines = getPhaseTaskLines(checklistContent, targetPhase);
-      const statusByPhase = getTasksByStatus(checklistContent);
-      const phaseStatus = statusByPhase[targetPhase];
-      const pendingLines = phaseStatus?.pending ?? allPhaseLines.filter((l) => /^\s*[-–—−]\s*\[\s*\]\s*/.test(l));
-      if (pendingLines.length === 0) {
-        setGeminiFlowStatus(null);
-        addOutputMessage({ type: "info", text: "Nenhuma tarefa pendente na fase atual." });
-        setLoadingLoop(false);
-        return;
-      }
-      const lastSent = getLastSentTaskLine();
-      const firstPending = pendingLines[0]?.trim();
-      if (firstPending && lastSent != null && firstPending === lastSent.trim()) {
-        setGeminiFlowStatus(null);
-        addOutputMessage({
-          type: "error",
-          text: "Duplo envio bloqueado. Aceite ou rejeite as alterações pendentes.",
-        });
-        setLoadingLoop(false);
-        return;
-      }
-      recordLastSentTask(firstPending ?? "");
-      setCurrentPhaseLines(allPhaseLines);
-      setLoopAutoRunning(true);
-      getChecklistProgress().then(setProgress);
-      const taskDescriptions = pendingLines.map(cleanTaskTitle);
-      addOutputMessage({
-        type: "info",
-        text: `Fase ${targetPhase} – Enviando ${taskDescriptions.length} subtópico(s) em um único prompt (economia de tokens).`,
-      });
-      const prompt = await getPromptForGemini({
-        phaseNumber: targetPhase,
-        taskDescription: taskDescriptions[0] ?? "",
-        taskDescriptions: taskDescriptions.length >= 1 ? taskDescriptions : undefined,
-        projectContext: null,
-        projectDescription: folderName ? folderName : undefined,
-      });
-      const result = await waitForCodeFromExtension(
-        prompt.trim(),
-        180000,
-        () => addOutputMessage({ type: "warning", text: "Extensão EVA Bridge não detectada." })
-      );
-      if (!result.ok) {
-        setGeminiFlowStatus(null);
-        addOutputMessage({ type: "error", text: result.error ?? "Erro ao receber código do Gemini." });
-        setLoopAutoRunning(false);
-        return;
-      }
-      setGeminiFlowStatus("code_received");
-      let files = result.files ?? (result.filename ? [{ name: result.filename, content: result.code ?? "" }] : []);
-      if (files.some((f) => f.name === FILENAME_ASK_GROQ)) {
-        addOutputMessage({ type: "info", text: "Nome do arquivo não encontrado na resposta. Perguntando ao Analista..." });
-        const resolved = await Promise.all(
-          files.map(async (f) =>
-            f.name === FILENAME_ASK_GROQ
-              ? { name: await suggestFilename(f.content), content: f.content }
-              : f
-          )
-        );
-        files = resolved;
-      }
-      if (files.length > 0) {
-        const fixed = files.map((f) => ({
-          filePath: fixTxtFilenameIfCode(f.name, f.content),
-          proposedContent: f.content,
-        }));
-        proposeChangesFromChat(fixed, { phaseLines: allPhaseLines });
-      }
-      getChecklistProgress().then(setProgress);
-    } catch (err) {
-      setGeminiFlowStatus(null);
-      addOutputMessage({
-        type: "error",
-        text: err instanceof Error ? err.message : "Erro ao executar fase completa.",
-      });
-      setLoopAutoRunning(false);
-    } finally {
-      setLoadingLoop(false);
-    }
-  }, [
-    isProcessing,
-    directoryHandle,
-    fileTree,
-    folderName,
-    extensionOnline,
-    setGeminiFlowStatus,
-    readChecklist,
-    getCurrentPhaseFromChecklist,
-    getPhaseTaskLines,
-    getTasksByStatus,
-    getLastSentTaskLine,
-    recordLastSentTask,
-    setCurrentPhaseLines,
-    setLoopAutoRunning,
-    getChecklistProgress,
-    proposeChangesFromChat,
     addOutputMessage,
   ]);
 
@@ -919,30 +885,15 @@ export function ChatSidebar() {
 
       <div className="p-2 border-t border-ds-border-light dark:border-ds-border shrink-0 space-y-2">
         <div className="flex flex-wrap gap-1.5 items-center">
-          <button
-            type="button"
-            onClick={handleExecutarLoop}
-            disabled={loadingLoop || loadingGeminiPhase || loading || !directoryHandle || !extensionOnline || geminiFlowStatus === "awaiting_gemini"}
-            className="rounded bg-ds-accent-light dark:bg-ds-accent-neon text-white dark:text-gray-900 px-2.5 py-1.5 text-xs font-medium hover:bg-ds-accent-light-hover dark:hover:bg-ds-accent-neon-hover shadow-[var(--ds-glow-neon)] focus:outline-none focus-visible:ring-1 focus-visible:ring-ds-accent-neon disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-ds-surface-light dark:disabled:bg-ds-surface disabled:text-ds-text-muted-light dark:disabled:text-ds-text-muted disabled:shadow-none"
-            aria-label="Executar Fase Completa (envia todos os subtópicos da fase atual em um único prompt)"
-            title="Executar Fase Completa — envia todos os subtópicos pendentes da fase atual ao Gemini em um único prompt (economia de tokens)"
-          >
-            {loadingLoop ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin inline-block mr-1 align-middle" aria-hidden />
-            ) : (
-              <Play className="w-3.5 h-3.5 inline-block mr-1 align-middle" aria-hidden />
-            )}
-            Executar Fase Completa
-          </button>
           {phaseOptions.length > 0 && (
-            <span className="text-[10px] text-ds-text-secondary-light dark:text-ds-text-secondary">ou Fase:</span>
+            <span className="text-[10px] text-ds-text-secondary-light dark:text-ds-text-secondary">Fase:</span>
           )}
           {phaseOptions.map((p) => (
             <button
               key={p.number}
               type="button"
               onClick={() => handleExecutarFaseComGemini(p.number)}
-              disabled={loadingGeminiPhase || loadingLoop || loading || !directoryHandle || !extensionOnline || geminiFlowStatus === "awaiting_gemini"}
+              disabled={loadingGeminiPhase || loading || !directoryHandle || !extensionOnline || geminiFlowStatus === "awaiting_gemini"}
               className="rounded bg-ds-surface-light dark:bg-ds-surface border border-ds-border-light dark:border-ds-border px-2 py-1 text-[10px] text-ds-text-primary-light dark:text-ds-text-primary hover:bg-ds-surface-hover-light dark:hover:bg-ds-surface-hover focus:outline-none focus-visible:ring-1 focus-visible:ring-ds-accent-neon disabled:opacity-50 disabled:cursor-not-allowed"
               aria-label={`Executar Fase ${p.number} (Gemini)`}
               title={`${p.title} — implementação via Gemini`}

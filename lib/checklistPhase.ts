@@ -325,6 +325,16 @@ export function getCurrentPhaseFromChecklist(checklistContent: string): number {
 }
 
 /**
+ * Retorna o número da fase que contém a PRIMEIRA tarefa pendente ([ ]) no documento.
+ * Usado para dar continuidade ao projeto na ordem correta (não pular tarefas da Fase 1 quando a Fase 2 também tem pendentes).
+ */
+export function getPhaseOfFirstPendingTask(checklistContent: string): number {
+  const firstLine = getFirstPendingTaskLine(checklistContent);
+  if (!firstLine) return 1;
+  return determinePhaseFromTask(firstLine, checklistContent);
+}
+
+/**
  * Identifica o número da fase de uma tarefa baseada na sua posição no checklist.
  * Percorre as seções ## Fase N para encontrar a que contém a taskLine fornecida.
  */

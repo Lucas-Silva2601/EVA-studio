@@ -1,17 +1,9 @@
 "use client";
 
-import dynamic from "next/dynamic";
-import { useRef, useEffect, useState } from "react";
-import { FileTree } from "@/components/file-explorer/FileTree";
+import { useRef, useEffect } from "react";
+import { FileTree, type FileTreeHandle } from "@/components/file-explorer/FileTree";
 import { useResize } from "@/hooks/useResize";
-import { useIdeState } from "@/hooks/useIdeState";
-import { GitBranch } from "lucide-react";
-
-/** Mermaid é carregado só no client (ssr: false) para evitar resolução no servidor. */
-const ArchitectureMapView = dynamic(
-  () => import("@/components/layout/ArchitectureMapView").then((m) => ({ default: m.ArchitectureMapView })),
-  { ssr: false }
-);
+import { FilePlus, FolderPlus } from "lucide-react";
 
 const SIDEBAR_MIN = 140;
 const SIDEBAR_MAX = 400;
@@ -21,8 +13,7 @@ const SIDEBAR_DEFAULT = 220;
  * Barra lateral esquerda: apenas Explorador de Arquivos (altura total).
  */
 export function Sidebar() {
-  const [showMap, setShowMap] = useState(false);
-  const { fileTree } = useIdeState();
+  const fileTreeRef = useRef<FileTreeHandle>(null);
   const { size, setSize, onMouseDown, onMouseMove, onMouseUp } = useResize(
     SIDEBAR_DEFAULT,
     SIDEBAR_MIN,
@@ -57,23 +48,30 @@ export function Sidebar() {
           <h2 className="panel-title">
             Explorador
           </h2>
-          <button
-            type="button"
-            onClick={() => setShowMap(true)}
-            className="flex items-center gap-1 rounded px-1.5 py-1 text-[10px] text-ds-text-secondary-light dark:text-ds-text-secondary hover:text-ds-text-primary-light dark:hover:text-ds-text-primary hover:bg-ds-surface-hover-light dark:hover:bg-ds-surface-hover focus:outline-none focus-visible:ring-1 focus-visible:ring-ds-accent-neon"
-            aria-label="Ver mapa do projeto (Mermaid)"
-            title="Ver mapa do projeto"
-          >
-            <GitBranch className="w-3.5 h-3.5" aria-hidden />
-            Mapa
-          </button>
+          <div className="flex items-center gap-0.5">
+            <button
+              type="button"
+              onClick={() => fileTreeRef.current?.startCreateFile()}
+              className="p-1.5 rounded text-ds-text-secondary-light dark:text-ds-text-secondary hover:bg-ds-surface-hover-light dark:hover:bg-ds-surface-hover hover:text-ds-accent-neon focus:outline-none focus-visible:ring-1 focus-visible:ring-ds-accent-neon disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Novo arquivo"
+              aria-label="Novo arquivo"
+            >
+              <FilePlus className="w-4 h-4" aria-hidden />
+            </button>
+            <button
+              type="button"
+              onClick={() => fileTreeRef.current?.startCreateDirectory()}
+              className="p-1.5 rounded text-ds-text-secondary-light dark:text-ds-text-secondary hover:bg-ds-surface-hover-light dark:hover:bg-ds-surface-hover hover:text-ds-accent-neon focus:outline-none focus-visible:ring-1 focus-visible:ring-ds-accent-neon disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Nova pasta"
+              aria-label="Nova pasta"
+            >
+              <FolderPlus className="w-4 h-4" aria-hidden />
+            </button>
+          </div>
         </div>
         <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden scrollbar-thin" style={{ scrollbarWidth: "thin" }}>
-          <FileTree />
+          <FileTree ref={fileTreeRef} />
         </div>
-        {showMap && (
-          <ArchitectureMapView fileTree={fileTree} onClose={() => setShowMap(false)} />
-        )}
       </div>
       <div
         className="resize-handle-horizontal shrink-0 flex-shrink-0 flex items-center justify-center self-stretch min-w-[8px] relative z-10"
