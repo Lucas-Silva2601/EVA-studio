@@ -178,14 +178,26 @@ export async function runPythonInPyodide(
 
 /**
  * Verifica se o ambiente suporta WebContainers (SharedArrayBuffer / cross-origin isolation).
+ * Requer COOP/COEP (next.config.js) e acesso via HTTPS ou localhost.
  */
 export function isWebContainerSupported(): boolean {
   if (typeof window === "undefined") return false;
   try {
-    return typeof SharedArrayBuffer !== "undefined";
+    if (typeof SharedArrayBuffer === "undefined") return false;
+    return (window as Window & { crossOriginIsolated?: boolean }).crossOriginIsolated === true;
   } catch {
     return false;
   }
+}
+
+/** Retorna mensagem curta para exibir quando o Live Preview não está disponível. */
+export function getWebContainerUnavailableReason(): string {
+  if (typeof window === "undefined") return "Ambiente não disponível.";
+  if (typeof SharedArrayBuffer === "undefined")
+    return "SharedArrayBuffer não disponível. Use Chrome ou Edge em localhost ou HTTPS.";
+  if (!(window as Window & { crossOriginIsolated?: boolean }).crossOriginIsolated)
+    return "Cross-origin isolation inativo. Recarregue a página (Ctrl+Shift+R) ou acesse via localhost/HTTPS.";
+  return "WebContainers indisponível.";
 }
 
 /** Estrutura de arquivo para montar no WebContainer. */
@@ -280,8 +292,8 @@ async function spawnServerOnPort(
     };
 
     timeoutId = setTimeout(() => {
-      doReject(new Error(`Timeout: porta ${port} não respondeu em 20s.${getStderrSuffix()}`));
-    }, 20000);
+      doReject(new Error(`Timeout: servidor não respondeu em 45s. A primeira execução pode demorar (download do http-server).${getStderrSuffix()}`));
+    }, 45000);
 
     wc.on?.("server-ready", onServerReady);
     wc.on?.("error", onError);

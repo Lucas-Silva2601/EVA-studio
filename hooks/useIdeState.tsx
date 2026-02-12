@@ -43,6 +43,7 @@ import {
   runNodeInWebContainer,
   runPythonInPyodide,
   isWebContainerSupported,
+  getWebContainerUnavailableReason,
   startWebContainerServer,
   updateWebContainerFiles,
   type WebContainerFile,
@@ -318,6 +319,11 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
           files.unshift(root);
         }
       }
+    } else {
+      const firstHtml = files.find((f) => f.path.toLowerCase().endsWith(".html"));
+      if (firstHtml) {
+        files.unshift({ path: "index.html", contents: firstHtml.contents });
+      }
     }
     return files;
   }, [directoryHandle, fileTree, openFiles, isPreviewRelevant]);
@@ -330,16 +336,16 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
     if (!isWebContainerSupported()) {
       addOutputMessage({
         type: "error",
-        text: "WebContainers exigem cross-origin isolation (COOP/COEP). Use HTTPS ou localhost.",
+        text: `Live Preview indisponível: ${getWebContainerUnavailableReason()} Verifique next.config.js (headers COOP/COEP) e recarregue a página (Ctrl+Shift+R).`,
       });
       return;
     }
     const paths = getFilePathsFromTree(fileTree);
-    const hasIndexAtRoot = paths.some((p) => p === "index.html" || p.endsWith("/index.html"));
-    if (!hasIndexAtRoot) {
+    const hasAnyHtml = paths.some((p) => p.toLowerCase().endsWith(".html"));
+    if (!hasAnyHtml) {
       addOutputMessage({
         type: "error",
-        text: "[ERRO] Para usar o Live Preview, o projeto deve ter um arquivo index.html na raiz.",
+        text: "[ERRO] Para usar o Live Preview, o projeto precisa ter pelo menos um arquivo .html.",
       });
       return;
     }
@@ -382,9 +388,13 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      const hint =
+        /SharedArrayBuffer|crossOriginIsolated|cross-origin|COOP|COEP/i.test(msg)
+          ? " Recarregue a página (Ctrl+Shift+R) e use localhost ou HTTPS."
+          : "";
       addOutputMessage({
         type: "error",
-        text: `Erro ao iniciar Live Preview: ${msg}`,
+        text: `Erro ao iniciar Live Preview: ${msg}${hint}`,
       });
     }
   }, [directoryHandle, fileTree, buildPreviewFiles, addOutputMessage]);
