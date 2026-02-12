@@ -66,6 +66,17 @@ export function DiffReviewModal() {
           <h2 id="diff-review-title" className="text-sm font-semibold text-ds-text-primary-light dark:text-ds-text-primary">
             Revisar alterações ({files.length} arquivo{files.length !== 1 ? "s" : ""})
           </h2>
+          <p className="mt-1.5 text-xs text-ds-text-secondary-light dark:text-ds-text-secondary">
+            <span className="inline-flex items-center gap-1">
+              <span className="inline-block w-3 h-3 rounded-sm bg-red-500/30 border border-red-500/60" aria-hidden />
+              Esquerda = conteúdo atual no projeto
+            </span>
+            {" · "}
+            <span className="inline-flex items-center gap-1">
+              <span className="inline-block w-3 h-3 rounded-sm bg-green-500/30 border border-green-500/60" aria-hidden />
+              Direita = alterações propostas (verde = adição, vermelho = remoção)
+            </span>
+          </p>
         </div>
 
         <div className="flex-1 overflow-auto min-h-0 p-3 space-y-3 scrollbar-thin">
@@ -79,10 +90,16 @@ export function DiffReviewModal() {
                 key={file.filePath}
                 className="rounded border border-ds-border-light dark:border-ds-border bg-ds-bg-primary-light/50 dark:bg-ds-bg-primary/50 overflow-hidden"
               >
-                <div className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-ds-text-primary-light dark:text-ds-text-primary bg-ds-surface-light/50 dark:bg-ds-surface/50">
-                  <span className="truncate">{file.filePath}</span>
-                  {isNewFile && (
-                    <span className="text-xs text-green-400 shrink-0">(novo)</span>
+                <div className="flex flex-wrap items-center gap-2 px-3 py-2 text-sm font-medium text-ds-text-primary-light dark:text-ds-text-primary bg-ds-surface-light/50 dark:bg-ds-surface/50">
+                  <span className="truncate font-mono">{file.filePath}</span>
+                  {isNewFile ? (
+                    <span className="text-xs font-normal px-1.5 py-0.5 rounded bg-green-500/20 text-green-600 dark:text-green-400 border border-green-500/40 shrink-0">
+                      Novo arquivo
+                    </span>
+                  ) : (
+                    <span className="text-xs font-normal px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-700 dark:text-amber-400 border border-amber-500/40 shrink-0">
+                      Será alterado
+                    </span>
                   )}
                 </div>
                 <div className="h-[min(400px,50vh)] min-h-[200px] p-2">

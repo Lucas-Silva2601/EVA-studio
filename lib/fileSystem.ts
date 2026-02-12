@@ -357,7 +357,14 @@ export async function updateChecklistOnDisk(
   if (docPaths.length > 0) {
     const sections = newContent.split(/\n(?=## Fase \d+)/i);
     for (let i = 0; i < docPaths.length && i < sections.length; i++) {
-      const body = sections[i].replace(/^## Fase \d+\s*\n+/i, "").trim();
+      const sectionContent = sections[i];
+      const sectionLines = sectionContent.split("\n");
+      const sectionHasMarkedLine = sectionLines.some((ln) =>
+        /^\s*[-–—−]\s*\[\s*[xX]\s*\]\s*/.test(ln) &&
+        normSet.has(normalizeTaskLine(ln.replace(/\[\s*[xX]\s*\]/, "[ ]")))
+      );
+      if (!sectionHasMarkedLine) continue;
+      const body = sectionContent.replace(/^## Fase \d+\s*\n+/i, "").trim();
       await createFileWithContent(rootHandle, docPaths[i], body);
     }
     return;

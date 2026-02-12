@@ -47,12 +47,15 @@ export function MonacoDiffWrapper({
         }}
         options={{
           renderSideBySide: true,
+          enableSplitViewResizing: true,
           readOnly: false,
           domReadOnly: false,
           originalEditable: false,
           scrollBeyondLastLine: false,
           automaticLayout: true,
           ignoreTrimWhitespace: false,
+          renderIndicators: true,
+          diffWordWrap: "on",
         }}
       />
     </div>
