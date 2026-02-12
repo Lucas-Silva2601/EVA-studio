@@ -423,7 +423,9 @@ Retorne APENAS o texto do prompt, algo como: "Fase ${phaseNum}. Tarefas a fazer:
   const contextForGemini = projectContext?.trim()
     ? `\n\n--- CONTEXTO DO PROJETO (estrutura e conteúdo dos arquivos; use como referência) ---\n${projectContext.slice(0, 28000)}\n--- Fim do contexto ---`
     : "";
-  return groqPrompt.trim() + contextForGemini;
+  const fileNamingRule =
+    "\n\nOBRIGATÓRIO: Para CADA bloco de código que você gerar, a primeira linha do bloco deve ser exatamente: FILE: nome-do-arquivo.ext (ex.: FILE: index.html, FILE: style.css, FILE: script.js). Um bloco por arquivo. Sem essa linha o arquivo será salvo com nome genérico (file_0.js, file_1.js). Use nomes atrelados ao projeto (index.html, style.css, script.js, game.js, etc.), nunca \"file\". ";
+  return groqPrompt.trim() + fileNamingRule + contextForGemini;
 }
 
 /**

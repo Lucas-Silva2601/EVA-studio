@@ -193,6 +193,12 @@
     if (first.includes("function ") || (first.includes("const ") && first.includes("=>")) || first.includes("export ")) {
       return "script.js";
     }
+    if (first.includes("getelementbyid") || first.includes("getcontext") || first.includes("queryselector") || first.includes("addeventlistener") || (first.includes("canvas") && first.includes("."))) {
+      return "script.js";
+    }
+    if (first.includes("setinterval") || first.includes("requestanimationframe") || first.includes("addEventListener")) {
+      return "script.js";
+    }
     if (first.includes("def ") || (first.includes("import ") && !first.includes("react"))) {
       return "script.py";
     }

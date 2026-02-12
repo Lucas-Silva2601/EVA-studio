@@ -256,8 +256,27 @@ export function ChatSidebar() {
                 filePath: fixTxtFilenameIfCode(f.name, f.content),
                 proposedContent: f.content,
               }));
-              proposeChangesFromChat(fixed, { phaseLines: pendingLines.length > 0 ? allPhaseLines : undefined });
-              addOutputMessage({ type: "success", text: "Código recebido do Gemini. Revise e clique em Implementar." });
+              const withResolvedNames = await Promise.all(
+                fixed.map(async (f) => {
+                  const path = (f.filePath ?? "").replace(/\\/g, "/").trim();
+                  const baseName = path.split("/").pop() ?? path;
+                  if (/^file_\d+\.(js|ts|jsx|tsx|css|html|py|json|md)$/i.test(baseName)) {
+                    const suggested = await suggestFilename(f.proposedContent);
+                    return { ...f, filePath: suggested };
+                  }
+                  return f;
+                })
+              );
+              const isPhaseFlow = explicitPhase != null;
+              const toShow = isPhaseFlow
+                ? withResolvedNames.filter((f) => !/^docs\/fase-\d+\.md$/i.test((f.filePath ?? "").replace(/\\/g, "/")))
+                : withResolvedNames;
+              if (toShow.length > 0) {
+                proposeChangesFromChat(toShow, { phaseLines: pendingLines.length > 0 ? allPhaseLines : undefined });
+                addOutputMessage({ type: "success", text: "Código recebido do Gemini. Revise e clique em Implementar." });
+              } else {
+                addOutputMessage({ type: "info", text: "Nenhum arquivo de código da fase no preview (apenas checklist). O checklist será atualizado ao aceitar." });
+              }
               getChecklistProgress().then(setProgress);
             } else {
               addOutputMessage({ type: "warning", text: "A extensão respondeu, mas nenhum código foi capturado. Recarregue a aba do Gemini (F5), espere a resposta terminar por completo e tente de novo." });
@@ -469,8 +488,27 @@ export function ChatSidebar() {
                 filePath: fixTxtFilenameIfCode(f.name, f.content),
                 proposedContent: f.content,
               }));
-              proposeChangesFromChat(fixed, { phaseLines: pendingLines.length > 0 ? allPhaseLines : undefined });
-              addOutputMessage({ type: "success", text: "Código recebido do Gemini. Revise e clique em Implementar." });
+              const withResolvedNames = await Promise.all(
+                fixed.map(async (f) => {
+                  const path = (f.filePath ?? "").replace(/\\/g, "/").trim();
+                  const baseName = path.split("/").pop() ?? path;
+                  if (/^file_\d+\.(js|ts|jsx|tsx|css|html|py|json|md)$/i.test(baseName)) {
+                    const suggested = await suggestFilename(f.proposedContent);
+                    return { ...f, filePath: suggested };
+                  }
+                  return f;
+                })
+              );
+              const isPhaseFlow = explicitPhase != null;
+              const toShow = isPhaseFlow
+                ? withResolvedNames.filter((f) => !/^docs\/fase-\d+\.md$/i.test((f.filePath ?? "").replace(/\\/g, "/")))
+                : withResolvedNames;
+              if (toShow.length > 0) {
+                proposeChangesFromChat(toShow, { phaseLines: pendingLines.length > 0 ? allPhaseLines : undefined });
+                addOutputMessage({ type: "success", text: "Código recebido do Gemini. Revise e clique em Implementar." });
+              } else {
+                addOutputMessage({ type: "info", text: "Nenhum arquivo de código da fase no preview (apenas checklist). O checklist será atualizado ao aceitar." });
+              }
               getChecklistProgress().then(setProgress);
             } else {
               addOutputMessage({ type: "warning", text: "A extensão respondeu, mas nenhum código foi capturado. Recarregue a aba do Gemini (F5), espere a resposta terminar por completo e tente de novo." });
