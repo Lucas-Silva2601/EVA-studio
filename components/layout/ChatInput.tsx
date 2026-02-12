@@ -58,27 +58,43 @@ export function ChatInput({
 
   const handleSendClick = () => onSend(images);
 
+  const addImageFiles = useCallback(
+    (files: File[]) => {
+      const imageFiles = files.filter((f) => f.type.startsWith("image/"));
+      if (imageFiles.length === 0) return;
+      let loaded = 0;
+      const toAdd: ChatInputImage[] = [];
+      imageFiles.forEach((file) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const dataUrl = reader.result as string;
+          const base64 = dataUrl.split(",")[1] ?? "";
+          toAdd.push({ dataUrl, base64, mimeType: file.type, name: file.name });
+          loaded++;
+          if (loaded === imageFiles.length) {
+            onImagesChange([...images, ...toAdd]);
+          }
+        };
+        reader.readAsDataURL(file);
+      });
+    },
+    [images, onImagesChange]
+  );
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files?.length) return;
-    const imageFiles = Array.from(files).filter((f) => f.type.startsWith("image/"));
-    if (imageFiles.length === 0) return;
-    let loaded = 0;
-    const toAdd: ChatInputImage[] = [];
-    imageFiles.forEach((file) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const dataUrl = reader.result as string;
-        const base64 = dataUrl.split(",")[1] ?? "";
-        toAdd.push({ dataUrl, base64, mimeType: file.type, name: file.name });
-        loaded++;
-        if (loaded === imageFiles.length) {
-          onImagesChange([...images, ...toAdd]);
-        }
-      };
-      reader.readAsDataURL(file);
-    });
+    addImageFiles(Array.from(files));
     e.target.value = "";
+  };
+
+  const handlePaste = (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.files;
+    if (!items?.length) return;
+    const files = Array.from(items).filter((f) => f.type.startsWith("image/"));
+    if (files.length === 0) return;
+    e.preventDefault();
+    addImageFiles(files);
   };
 
   const removeImage = (idx: number) => {
@@ -138,6 +154,7 @@ export function ChatInput({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
           placeholder={placeholder}
           rows={1}
           disabled={disabled}

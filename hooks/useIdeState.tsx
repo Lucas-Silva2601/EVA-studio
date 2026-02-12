@@ -179,6 +179,10 @@ interface IdeStateContextValue {
   stopLivePreview: () => void;
   /** Atualiza arquivos no WebContainer (hot reload quando preview ativo). */
   refreshPreviewFiles: () => Promise<void>;
+  /** Comandos sugeridos pela IA para rodar no terminal (ex.: npm install lodash). Exibidos no Output; usuário pode executar na pasta do projeto ou no Terminal quando disponível. */
+  pendingTerminalCommands: string[];
+  /** Limpa a fila de comandos sugeridos pela IA. */
+  clearPendingTerminalCommands: () => void;
 }
 
 const IdeStateContext = createContext<IdeStateContextValue | null>(null);
@@ -210,6 +214,8 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
   const [currentPhaseLines, setCurrentPhaseLines] = useState<string[] | null>(null);
   /** Fila de deleções solicitadas pelo Analista; aguardam aprovação no DeletionModal. */
   const [pendingDeletionQueue, setPendingDeletionQueue] = useState<Array<{ kind: "file" | "folder"; path: string }>>([]);
+  /** Comandos sugeridos pela IA para rodar no terminal (RUN_COMMAND). */
+  const [pendingTerminalCommands, setPendingTerminalCommands] = useState<string[]>([]);
   /** Live Preview: URL do servidor estático no WebContainer. */
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const checklistUpdatedListenersRef = useRef<Set<() => void>>(new Set());
@@ -1129,6 +1135,12 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
             await moveFileFs(directoryHandle, a.from, a.to);
             addOutputMessage({ type: "success", text: `Arquivo movido: ${a.from} → ${a.to}` });
             await refreshTreeOnly();
+          } else if (a.action === "RUN_COMMAND") {
+            setPendingTerminalCommands((prev) => [...prev, a.command]);
+            addOutputMessage({
+              type: "info",
+              text: `Comando sugerido pela IA (execute no terminal do seu projeto): ${a.command}`,
+            });
           }
         } catch (err) {
           addOutputMessage({
@@ -1236,6 +1248,8 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
     startLivePreview,
     stopLivePreview,
     refreshPreviewFiles,
+    pendingTerminalCommands,
+    clearPendingTerminalCommands: () => setPendingTerminalCommands([]),
   };
 
   return (

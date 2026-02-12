@@ -22,7 +22,7 @@ export function BottomPanel() {
     "left",
     "eva-terminal-height"
   );
-  const { outputMessages, clearOutput } = useIdeState();
+  const { outputMessages, clearOutput, pendingTerminalCommands, clearPendingTerminalCommands } = useIdeState();
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -129,11 +129,30 @@ export function BottomPanel() {
             className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden scrollbar-thin px-3 py-2 font-mono text-sm [scroll-behavior:smooth]"
             style={{ scrollbarWidth: "thin" }}
           >
-            {outputMessages.length === 0 ? (
+            {pendingTerminalCommands.length > 0 && (
+              <div className="mb-3 p-2 rounded bg-ds-surface-light dark:bg-ds-surface border border-ds-border-light dark:border-ds-border">
+                <p className="text-sm font-medium text-ds-text-primary-light dark:text-ds-text-primary mb-1">
+                  Comandos sugeridos pela IA (execute no terminal na pasta do projeto):
+                </p>
+                <ul className="list-disc list-inside text-sm text-ds-text-secondary-light dark:text-ds-text-secondary space-y-0.5 mb-2">
+                  {pendingTerminalCommands.map((cmd, i) => (
+                    <li key={i} className="font-mono">{cmd}</li>
+                  ))}
+                </ul>
+                <button
+                  type="button"
+                  onClick={clearPendingTerminalCommands}
+                  className="text-xs px-2 py-1 rounded hover:bg-ds-surface-hover-light dark:hover:bg-ds-surface-hover focus:outline-none focus-visible:ring-1 focus-visible:ring-ds-accent-neon"
+                >
+                  Limpar fila de comandos
+                </button>
+              </div>
+            )}
+            {outputMessages.length === 0 && pendingTerminalCommands.length === 0 ? (
               <p className="text-ds-text-muted-light dark:text-ds-text-muted text-sm">
                 Mensagens do fluxo de automação aparecerão aqui (ex.: &quot;Analisando checklist...&quot;).
               </p>
-            ) : (
+            ) : outputMessages.length > 0 ? (
               outputMessages.map((msg) => (
                 <div
                   key={msg.id}
@@ -146,7 +165,7 @@ export function BottomPanel() {
                   {msg.text}
                 </div>
               ))
-            )}
+            ) : null}
           </div>
         </div>
       )}

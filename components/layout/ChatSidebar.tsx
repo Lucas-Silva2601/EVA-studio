@@ -8,6 +8,8 @@ import { chatWithAnalyst, chatToChecklistTasks } from "@/lib/groq";
 import { getProjectContext } from "@/lib/contextPacker";
 import { getChatMessages, saveChatMessages } from "@/lib/indexedDB";
 import { ChatCodeBlock } from "@/components/layout/ChatCodeBlock";
+import { waitForCodeFromExtension, FILENAME_ASK_GROQ } from "@/lib/messaging";
+import { buildPromptForGemini, extractPromptFromAssistantMessage } from "@/lib/geminiPrompt";
 
 export type ChatMessage = {
   role: "user" | "assistant";
@@ -62,10 +64,97 @@ export function ChatSidebar() {
   const [loading, setLoading] = useState(false);
   const [loadingContinue, setLoadingContinue] = useState(false);
   const [loadingTasks, setLoadingTasks] = useState(false);
+  const [loadingGemini, setLoadingGemini] = useState(false);
   const [progress, setProgress] = useState<{ totalPending: number; completedCount: number } | null>(null);
   const [pendingImages, setPendingImages] = useState<ChatInputImage[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  /** Envia prompt ao Gemini via extensão; ao receber código, abre o diff e opcionalmente adiciona mensagem no chat (repassar ao Groq). */
+  const sendTaskToGemini = useCallback(
+    async (
+      prompt: string,
+      task?: { taskLine: string; taskDescription: string },
+      phaseLines?: string[]
+    ) => {
+      if (!directoryHandle || !prompt.trim()) return;
+      setLoadingGemini(true);
+      addOutputMessage({ type: "info", text: "Enviando tarefa ao Gemini (extensão). Aguarde..." });
+      if (task) setCurrentChecklistTask(task);
+      try {
+        const result = await waitForCodeFromExtension(
+          prompt,
+          120000,
+          () => addOutputMessage({ type: "warning", text: "Extensão não detectada. Instale a EVA Studio Bridge e abra uma aba em gemini.google.com." })
+        );
+        if (!result.ok) {
+          addOutputMessage({ type: "error", text: result.error ?? "Erro ao receber código do Gemini." });
+          setLoadingGemini(false);
+          return;
+        }
+        const files = result.files ?? (result.filename || result.code ? [{ name: result.filename ?? "file.txt", content: result.code }] : []);
+        const validFiles = files.filter((f) => f.name !== FILENAME_ASK_GROQ);
+        if (validFiles.length === 0) {
+          addOutputMessage({
+            type: "warning",
+            text: "Nenhum arquivo válido recebido do Gemini. Se o nome do arquivo não foi detectado, pergunte ao Analista (Groq) o nome antes de salvar.",
+          });
+          setLoadingGemini(false);
+          return;
+        }
+        const toPropose = validFiles.map((f) => ({ filePath: f.name, proposedContent: f.content }));
+        proposeChangesFromChat(toPropose, { phaseLines: phaseLines ?? (task ? [task.taskLine] : undefined) });
+        const fileList = validFiles.map((f) => f.name).join(", ");
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            content: `**O Gemini concluiu a tarefa e gerou os arquivos:** ${fileList}. Revise as alterações no diff e aceite para salvar no projeto.`,
+          },
+        ]);
+        addOutputMessage({ type: "success", text: `Código recebido do Gemini (${validFiles.length} arquivo(s)). Revise o diff.` });
+      } catch (err) {
+        addOutputMessage({ type: "error", text: `Erro ao enviar/receber do Gemini: ${(err as Error).message}` });
+      } finally {
+        setLoadingGemini(false);
+      }
+    },
+    [
+      directoryHandle,
+      addOutputMessage,
+      setCurrentChecklistTask,
+      proposeChangesFromChat,
+    ]
+  );
+
+  /** Envia automaticamente a próxima tarefa do checklist ao Gemini (quando não há prompt explícito na resposta do Groq). */
+  const sendNextTaskToGeminiIfAny = useCallback(async () => {
+    if (!directoryHandle) return;
+    try {
+      const openChecklist = activeFilePath === "checklist.md" ? openFiles.find((f) => f.path === "checklist.md") : null;
+      const checklistContent = openChecklist ? openChecklist.content : await readChecklist();
+      const nextTask = await getNextTaskFromContent(checklistContent);
+      if (!nextTask) return;
+      const projectContext =
+        fileTree.length > 0 ? await getProjectContext(directoryHandle, fileTree) : "";
+      const prompt = buildPromptForGemini(nextTask.taskDescription, {
+        taskLine: nextTask.taskLine,
+        projectContext: projectContext || undefined,
+      });
+      await sendTaskToGemini(prompt, nextTask, [nextTask.taskLine]);
+    } catch {
+      // Silencioso: não interrompe o fluxo do chat
+    }
+  }, [
+    directoryHandle,
+    activeFilePath,
+    openFiles,
+    readChecklist,
+    getNextTaskFromContent,
+    fileTree,
+    getProjectContext,
+    sendTaskToGemini,
+  ]);
 
   const handleStopGenerating = useCallback(() => {
     abortControllerRef.current?.abort();
@@ -187,6 +276,12 @@ export function ChatSidebar() {
         return next;
       });
       executeEvaActions(reply.content);
+      const promptForGemini = extractPromptFromAssistantMessage(mergedContent);
+      if (promptForGemini) {
+        sendTaskToGemini(promptForGemini);
+      } else {
+        sendNextTaskToGeminiIfAny();
+      }
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") {
         addOutputMessage({ type: "info", text: "Continuação interrompida." });
@@ -211,6 +306,8 @@ export function ChatSidebar() {
     addOutputMessage,
     getChecklistContentForContext,
     executeEvaActions,
+    sendTaskToGemini,
+    sendNextTaskToGeminiIfAny,
   ]);
 
   const handleSend = async (imgs: ChatInputImage[] = []) => {
@@ -252,6 +349,12 @@ export function ChatSidebar() {
         { role: "assistant", content: reply.content, isTruncated: reply.isTruncated },
       ]);
       executeEvaActions(reply.content);
+      const promptForGemini = extractPromptFromAssistantMessage(reply.content);
+      if (promptForGemini) {
+        sendTaskToGemini(promptForGemini);
+      } else {
+        sendNextTaskToGeminiIfAny();
+      }
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") {
         setMessages((prev) => [

@@ -8,12 +8,15 @@ export type EvaActionCreateDir = { action: "CREATE_DIRECTORY"; path: string };
 export type EvaActionDeleteFile = { action: "DELETE_FILE"; path: string };
 export type EvaActionDeleteFolder = { action: "DELETE_FOLDER"; path: string };
 export type EvaActionMove = { action: "MOVE_FILE"; from: string; to: string };
+/** Comando para rodar no terminal do WebContainer (ex.: npm install lodash). Requer aprovação ou envio no painel Terminal. */
+export type EvaActionRunCommand = { action: "RUN_COMMAND"; command: string };
 export type EvaAction =
   | EvaActionCreateFile
   | EvaActionCreateDir
   | EvaActionDeleteFile
   | EvaActionDeleteFolder
-  | EvaActionMove;
+  | EvaActionMove
+  | EvaActionRunCommand;
 
 const EVA_ACTION_REGEX = /\[EVA_ACTION\]\s*(\{[^}]+\})/gi;
 
@@ -45,6 +48,8 @@ export function parseEvaActions(content: string): EvaAction[] {
           from: (obj.from as string).trim(),
           to: (obj.to as string).trim(),
         });
+      } else if (act === "RUN_COMMAND" && typeof obj.command === "string") {
+        actions.push({ action: "RUN_COMMAND", command: (obj.command as string).trim() });
       }
     } catch {
       // ignorar JSON inválido
