@@ -400,30 +400,38 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
     }
   }, [addOutputMessage]);
 
+  // Restaura pasta salva após primeiro paint (não bloqueia inicialização)
   useEffect(() => {
     if (typeof window === "undefined" || !isFileSystemAccessSupported() || restoreAttempted) return;
     setRestoreAttempted(true);
-    getDirectoryHandle()
-      .then(async (handle) => {
-        if (!handle) return;
-        const ok = await verifyDirectoryPermission(handle);
-        if (!ok) {
-          await clearDirectoryHandle();
-          addOutputMessage({
-            type: "info",
-            text: "Permissão da pasta salva expirou. Abra a pasta novamente.",
-          });
-          return;
-        }
-        setDirectoryHandle(handle);
-        setFolderName(handle.name);
-        addOutputMessage({ type: "info", text: `Pasta restaurada: ${handle.name}` });
-        await ensureChecklistExists(handle);
-        const tree = await listDirectoryRecursive(handle);
-        setFileTree(tree);
-        addOutputMessage({ type: "success", text: "Projeto restaurado da última sessão." });
-      })
-      .catch(() => {});
+    const runRestore = () => {
+      getDirectoryHandle()
+        .then(async (handle) => {
+          if (!handle) return;
+          const ok = await verifyDirectoryPermission(handle);
+          if (!ok) {
+            await clearDirectoryHandle();
+            addOutputMessage({
+              type: "info",
+              text: "Permissão da pasta salva expirou. Abra a pasta novamente.",
+            });
+            return;
+          }
+          setDirectoryHandle(handle);
+          setFolderName(handle.name);
+          addOutputMessage({ type: "info", text: `Pasta restaurada: ${handle.name}` });
+          await ensureChecklistExists(handle);
+          const tree = await listDirectoryRecursive(handle);
+          setFileTree(tree);
+          addOutputMessage({ type: "success", text: "Projeto restaurado da última sessão." });
+        })
+        .catch(() => {});
+    };
+    if (typeof requestIdleCallback !== "undefined") {
+      requestIdleCallback(runRestore, { timeout: 2000 });
+    } else {
+      setTimeout(runRestore, 0);
+    }
   }, [addOutputMessage, restoreAttempted]);
 
   const forgetStoredDirectory = useCallback(async () => {
