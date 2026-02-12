@@ -1,32 +1,19 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import dynamic from "next/dynamic";
 import { ChevronDown, ChevronUp, Trash2 } from "lucide-react";
 import { useResize } from "@/hooks/useResize";
 import { useIdeState } from "@/hooks/useIdeState";
-import { TerminalErrorBoundary } from "@/components/layout/TerminalErrorBoundary";
-
-const TerminalPanel = dynamic(() => import("@/components/layout/TerminalPanel").then((m) => ({ default: m.TerminalPanel })), {
-  ssr: false,
-  loading: () => (
-    <div className="flex-1 flex items-center justify-center text-ds-text-muted-light dark:text-ds-text-muted text-sm">
-      Carregando terminal...
-    </div>
-  ),
-});
 
 const PANEL_MIN = 120;
 const PANEL_MAX = 400;
 const PANEL_DEFAULT = 180;
 
 /**
- * Painel inferior (Output/Terminal) redimensionável, com mensagens do fluxo de automação.
+ * Painel inferior (Output) redimensionável, com mensagens do fluxo de automação.
  */
 export function BottomPanel() {
   const [open, setOpen] = useState(true);
-  const [activeTab, setActiveTab] = useState<"output" | "terminal">("output");
-  const [terminalHasError, setTerminalHasError] = useState(false);
   const { size, setSize, onMouseDown, onMouseMove, onMouseUp } = useResize(
     PANEL_DEFAULT,
     PANEL_MIN,
@@ -35,7 +22,7 @@ export function BottomPanel() {
     "left",
     "eva-terminal-height"
   );
-  const { outputMessages, clearOutput, loopStatus, refreshFileTree } = useIdeState();
+  const { outputMessages, clearOutput } = useIdeState();
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -59,14 +46,6 @@ export function BottomPanel() {
     warning: "text-[var(--ds-text-warning)]",
     error: "text-[var(--ds-text-error)]",
   };
-
-  const LOOP_STATUS_LABELS: Record<string, string> = {
-    idle: "Pronto",
-    validating: "Validando",
-    error: "Erro",
-    awaiting_review: "Aguardando sua revisão",
-  };
-  const statusLabel = LOOP_STATUS_LABELS[loopStatus] ?? loopStatus;
 
   return (
     <div
@@ -120,54 +99,14 @@ export function BottomPanel() {
         aria-controls="panel-content"
       >
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-            <button
-              type="button"
-              onClick={() => setActiveTab("output")}
-              className={`px-2 py-1 rounded text-sm font-medium transition-colors ${
-                activeTab === "output"
-                  ? "text-ds-accent-neon bg-ds-accent-neon/10"
-                  : "text-ds-text-muted-light dark:text-ds-text-muted hover:text-ds-text-primary-light dark:hover:text-ds-text-primary"
-              }`}
-              aria-pressed={activeTab === "output"}
-            >
-              Output
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setActiveTab("terminal");
-                setTerminalHasError(false);
-              }}
-              className={`flex items-center gap-1.5 px-2 py-1 rounded text-sm font-medium transition-colors ${
-                activeTab === "terminal"
-                  ? "text-ds-accent-neon bg-ds-accent-neon/10"
-                  : "text-ds-text-muted-light dark:text-ds-text-muted hover:text-ds-text-primary-light dark:hover:text-ds-text-primary"
-              }`}
-              aria-pressed={activeTab === "terminal"}
-            >
-              {terminalHasError && (
-                <span
-                  className="w-2 h-2 rounded-full bg-ds-accent-neon shrink-0"
-                  aria-hidden
-                  title="Erro detectado no terminal"
-                />
-              )}
-              Terminal
-            </button>
-          </div>
-          {activeTab === "output" && (
-            <span className="text-xs text-ds-text-muted-light dark:text-ds-text-muted" aria-live="polite" title={`Estado: ${statusLabel}`}>
-              • {statusLabel}
-            </span>
-          )}
+          <span className="text-sm font-medium text-ds-text-primary-light dark:text-ds-text-primary">Output</span>
           {open ? (
             <ChevronDown className="w-4 h-4 text-ds-text-muted-light dark:text-ds-text-muted" aria-hidden />
           ) : (
             <ChevronUp className="w-4 h-4 text-ds-text-muted-light dark:text-ds-text-muted" aria-hidden />
           )}
         </div>
-        {open && activeTab === "output" && (
+        {open && (
           <button
             type="button"
             onClick={(e) => {
@@ -182,44 +121,33 @@ export function BottomPanel() {
         )}
       </div>
 
-      {/* Conteúdo — Output ou Terminal (renderização condicional estrita para destruir terminal ao ocultar) */}
+      {/* Conteúdo — Output */}
       {open && (
         <div id="panel-content" className="flex-1 min-h-0 flex flex-col overflow-hidden">
-          {activeTab === "output" && (
-            <div
-              ref={listRef}
-              className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden scrollbar-thin px-3 py-2 font-mono text-sm [scroll-behavior:smooth]"
-              style={{ scrollbarWidth: "thin" }}
-            >
-              {outputMessages.length === 0 ? (
-                <p className="text-ds-text-muted-light dark:text-ds-text-muted text-sm">
-                  Mensagens do fluxo de automação aparecerão aqui (ex.: &quot;Analisando checklist...&quot;, &quot;Aguardando resposta do Gemini...&quot;).
-                </p>
-              ) : (
-                outputMessages.map((msg) => (
-                  <div
-                    key={msg.id}
-                    className={`py-0.5 ${typeStyles[msg.type]}`}
-                    role="log"
-                  >
-                    <span className="text-ds-text-muted-light dark:text-ds-text-muted select-none">
-                      [{msg.timestamp.toLocaleTimeString("pt-BR")}]
-                    </span>{" "}
-                    {msg.text}
-                  </div>
-                ))
-              )}
-            </div>
-          )}
-          {activeTab === "terminal" && open && (
-            <TerminalErrorBoundary>
-              <TerminalPanel
-                isVisible={open}
-                onErrorDetected={() => setTerminalHasError(true)}
-                onCommandComplete={refreshFileTree}
-              />
-            </TerminalErrorBoundary>
-          )}
+          <div
+            ref={listRef}
+            className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden scrollbar-thin px-3 py-2 font-mono text-sm [scroll-behavior:smooth]"
+            style={{ scrollbarWidth: "thin" }}
+          >
+            {outputMessages.length === 0 ? (
+              <p className="text-ds-text-muted-light dark:text-ds-text-muted text-sm">
+                Mensagens do fluxo de automação aparecerão aqui (ex.: &quot;Analisando checklist...&quot;, &quot;Aguardando resposta do Gemini...&quot;).
+              </p>
+            ) : (
+              outputMessages.map((msg) => (
+                <div
+                  key={msg.id}
+                  className={`py-0.5 ${typeStyles[msg.type]}`}
+                  role="log"
+                >
+                  <span className="text-ds-text-muted-light dark:text-ds-text-muted select-none">
+                    [{msg.timestamp.toLocaleTimeString("pt-BR")}]
+                  </span>{" "}
+                  {msg.text}
+                </div>
+              ))
+            )}
+          </div>
         </div>
       )}
     </div>

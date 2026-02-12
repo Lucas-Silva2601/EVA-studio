@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { FolderOpen, FolderX, Terminal, Loader2, Sun, Moon } from "lucide-react";
+import { FolderOpen, FolderX, Loader2, Sun, Moon } from "lucide-react";
 import { useIdeState } from "@/hooks/useIdeState";
 import { useTheme } from "@/hooks/useTheme";
 
@@ -9,7 +9,7 @@ import { useTheme } from "@/hooks/useTheme";
  * Barra de título da IDE com nome do projeto e ações principais.
  */
 export function TitleBar() {
-  const { folderName, openDirectory, forgetStoredDirectory, runCurrentFile, runStatus } = useIdeState();
+  const { folderName, openDirectory, forgetStoredDirectory } = useIdeState();
   const { theme, toggleTheme } = useTheme();
   const [opening, setOpening] = useState(false);
 
@@ -21,9 +21,6 @@ export function TitleBar() {
       setOpening(false);
     }
   };
-
-  const isRunFileRunning = runStatus === "running";
-  const canRunFile = !!folderName && !isRunFileRunning && !opening;
 
   return (
     <header
@@ -73,17 +70,6 @@ export function TitleBar() {
             Esquecer pasta
           </button>
         )}
-        <button
-          type="button"
-          onClick={() => runCurrentFile()}
-          disabled={!canRunFile}
-          className="flex items-center gap-2 px-3 py-1.5 rounded text-sm bg-ds-accent-light dark:bg-ds-accent-neon hover:bg-ds-accent-light-hover dark:hover:bg-ds-accent-neon-hover text-white dark:text-gray-900 shadow-[var(--ds-glow-neon)] focus:outline-none focus-visible:ring-2 focus-visible:ring-ds-accent-neon disabled:opacity-50 disabled:bg-ds-surface-hover-light dark:disabled:bg-ds-surface-hover disabled:text-ds-text-secondary-light dark:disabled:text-ds-text-secondary disabled:shadow-none"
-          aria-label="Executar arquivo ativo (Node ou Python)"
-          title={!folderName ? "Abra uma pasta primeiro" : isRunFileRunning ? "Executando…" : "Executar arquivo ativo"}
-        >
-          {isRunFileRunning ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden /> : <Terminal className="w-4 h-4" aria-hidden />}
-          {isRunFileRunning ? "Executando…" : "Executar"}
-        </button>
       </div>
     </header>
   );

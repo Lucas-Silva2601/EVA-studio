@@ -742,12 +742,6 @@ export function ChatSidebar() {
           <MessageCircle className="w-3.5 h-3.5" aria-hidden />
           Chat EVA
         </h2>
-        <span
-          className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${extensionOnline ? "text-red-200 bg-red-900/40 dark:text-red-300 dark:bg-red-900/35" : "text-zinc-500 bg-zinc-800/50 dark:text-zinc-400 dark:bg-zinc-800/40"}`}
-          title={extensionOnline ? "Extensão EVA Bridge conectada (Gemini)" : "Extensão offline. Instale a EVA Bridge e abra gemini.google.com."}
-        >
-          {extensionOnline ? "Online" : "Offline"}
-        </span>
         {activeFile && (
           <span
             className="text-[10px] text-ds-text-secondary-light dark:text-ds-text-secondary truncate max-w-[100px]"
