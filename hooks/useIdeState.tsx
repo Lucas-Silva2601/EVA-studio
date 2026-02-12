@@ -48,8 +48,7 @@ import {
   updateWebContainerFiles,
   type WebContainerFile,
 } from "@/lib/runtime";
-import { reportErrorToAnalyst, type ChatProvider } from "@/lib/groq";
-import { onExtensionMessage, pingExtension } from "@/lib/messaging";
+import { reportErrorToAnalyst } from "@/lib/groq";
 import {
   applyAllPhaseCompletions,
   replaceTaskLineWithCompleted,
@@ -162,25 +161,6 @@ interface IdeStateContextValue {
   /** Linhas do checklist da fase atual (Entrega de Fase); usadas ao clicar em "Implementar" em mensagem multi-arquivo. */
   currentPhaseLines: string[] | null;
   setCurrentPhaseLines: (v: string[] | null) => void;
-  /** Extensão EVA Bridge (Gemini): online quando content script está na página. */
-  extensionOnline: boolean;
-  setExtensionOnline: (v: boolean) => void;
-  /** Modelo de IA do chat (Groq ou Gemini). Persistido em localStorage. */
-  chatProvider: ChatProvider;
-  setChatProvider: (v: ChatProvider) => void;
-  /** Buffer de arquivos recebidos do Gemini durante "Executar Fase com Gemini". */
-  phaseBuffer: Array<{ path: string; content: string }>;
-  setPhaseBuffer: (v: Array<{ path: string; content: string }> | ((prev: Array<{ path: string; content: string }>) => Array<{ path: string; content: string }>)) => void;
-  /** Linhas do checklist da fase (para marcar [x] ao clicar em "Implementar Fase"). */
-  phaseBufferPhaseLines: string[] | null;
-  setPhaseBufferPhaseLines: (v: string[] | null) => void;
-  /** Abre Diff com todos os arquivos do phaseBuffer e phaseBufferPhaseLines; ao aceitar, salva e marca [x]. */
-  implementPhaseFromBuffer: () => Promise<void>;
-  /** Status do fluxo Gemini: Aguardando -> Código Recebido -> Implementado (exibido no chat). */
-  geminiFlowStatus: "awaiting_gemini" | "code_received" | "implemented" | null;
-  setGeminiFlowStatus: (v: "awaiting_gemini" | "code_received" | "implemented" | null) => void;
-  /** Trava de execução: true enquanto mensagem está "voando" para o Gemini ou aguardando resposta. Bloqueia runNextTask para evitar envios duplicados. */
-  isProcessing: boolean;
   /** Executa comandos EVA_ACTION. Criação (CREATE_FILE, CREATE_DIRECTORY) é silenciosa; deleção (DELETE_*) exige aprovação no DeletionModal. */
   executeEvaActions: (content: string) => Promise<void>;
   /** Fila de deleções pendentes de aprovação (Analista solicitou; usuário deve clicar "Apagar" no modal). */
@@ -189,14 +169,6 @@ interface IdeStateContextValue {
   approvePendingDeletion: () => Promise<void>;
   /** Descarta o primeiro item da fila sem apagar. */
   rejectPendingDeletion: () => void;
-  /** Trava de estado: grava a tarefa que acabou de ser enviada ao Gemini (evita reenviar a mesma). */
-  recordLastSentTask: (taskLine: string) => void;
-  /** Limpa a trava após marcar [x] no checklist (aceitar diff). */
-  clearLastSentTask: () => void;
-  /** Retorna false se a tarefa já foi enviada e ainda não foi concluída (evita loop redundante). */
-  canSendTask: (taskLine: string) => boolean;
-  /** Retorna a última tarefa enviada ao Gemini (para checar duplo envio). */
-  getLastSentTaskLine: () => string | null;
   /** Registra callback chamado após o checklist ser atualizado (ex.: aceitar diff). Retorna função para desregistrar. */
   onChecklistUpdated: (fn: () => void) => () => void;
   /** Live Preview: URL do servidor no WebContainer (null quando inativo). */
@@ -230,30 +202,12 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
     taskLine: string;
     taskDescription: string;
   } | null>(null);
-  /** Tarefa última enviada ao Gemini; bloqueia reenvio até aceitar diff ou marcar [x]. */
-  const lastSentTaskLineRef = useRef<string | null>(null);
   const [nextPendingTask, setNextPendingTask] = useState<{
     taskLine: string;
     taskDescription: string;
   } | null>(null);
   const [loopAutoRunning, setLoopAutoRunning] = useState(false);
   const [currentPhaseLines, setCurrentPhaseLines] = useState<string[] | null>(null);
-  const [extensionOnline, setExtensionOnline] = useState(false);
-  const [chatProvider, setChatProviderState] = useState<ChatProvider>("groq");
-  const setChatProvider = useCallback((v: ChatProvider) => {
-    setChatProviderState(v);
-    if (typeof localStorage !== "undefined") {
-      localStorage.setItem("eva_chat_provider", v);
-    }
-  }, []);
-  useEffect(() => {
-    if (typeof localStorage === "undefined") return;
-    const stored = localStorage.getItem("eva_chat_provider") as ChatProvider | null;
-    if (stored === "groq" || stored === "gemini") setChatProviderState(stored);
-  }, []);
-  const [phaseBuffer, setPhaseBuffer] = useState<Array<{ path: string; content: string }>>([]);
-  const [phaseBufferPhaseLines, setPhaseBufferPhaseLines] = useState<string[] | null>(null);
-  const [geminiFlowStatus, setGeminiFlowStatus] = useState<"awaiting_gemini" | "code_received" | "implemented" | null>(null);
   /** Fila de deleções solicitadas pelo Analista; aguardam aprovação no DeletionModal. */
   const [pendingDeletionQueue, setPendingDeletionQueue] = useState<Array<{ kind: "file" | "folder"; path: string }>>([]);
   /** Live Preview: URL do servidor estático no WebContainer. */
@@ -445,17 +399,6 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
       });
     }
   }, [addOutputMessage]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const unsub = onExtensionMessage((type, payload) => {
-      if (type === "CODE_RESPONSE" && payload && typeof payload === "object" && "_connected" in payload) {
-        setExtensionOnline(true);
-      }
-    });
-    pingExtension().then(setExtensionOnline);
-    return unsub;
-  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined" || !isFileSystemAccessSupported() || restoreAttempted) return;
@@ -756,22 +699,6 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
-  const recordLastSentTask = useCallback((taskLine: string) => {
-    lastSentTaskLineRef.current = taskLine;
-  }, []);
-
-  const clearLastSentTask = useCallback(() => {
-    lastSentTaskLineRef.current = null;
-  }, []);
-
-  const canSendTask = useCallback((taskLine: string) => {
-    const last = lastSentTaskLineRef.current;
-    if (last == null) return true;
-    return last.trim() !== taskLine.trim();
-  }, []);
-
-  const getLastSentTaskLine = useCallback(() => lastSentTaskLineRef.current, []);
-
   const saveCurrentFile = useCallback(async () => {
     if (!directoryHandle) {
       addOutputMessage({ type: "info", text: "Abra uma pasta antes de salvar." });
@@ -898,10 +825,9 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
   const rejectDiffReview = useCallback(() => {
     setPendingDiffReview(null);
     setLoopStatus("idle");
-    lastSentTaskLineRef.current = null;
     setConsecutiveFailures((c) => {
       const next = c + 1;
-      addOutputMessage({ type: "info", text: "Alterações rejeitadas. Nenhum arquivo foi gravado. Pode reenviar a tarefa ao Gemini." });
+      addOutputMessage({ type: "info", text: "Alterações rejeitadas. Nenhum arquivo foi gravado." });
       if (next >= 3) {
         addOutputMessage({
           type: "error",
@@ -938,8 +864,6 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
         setFileTree(tree);
 
         if (pending.fromChat) {
-          setGeminiFlowStatus("implemented");
-          setTimeout(() => setGeminiFlowStatus(null), 3000);
           const phaseLines = pending.phaseLines ?? [];
           const taskToMark = currentChecklistTask;
           setCurrentChecklistTask(null);
@@ -990,7 +914,6 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
             setNextPendingTask(null);
             if (loopAutoRunning) setLoopAutoRunning(false);
           }
-          lastSentTaskLineRef.current = null;
           notifyChecklistUpdated();
           return;
         }
@@ -1006,7 +929,6 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
           setConsecutiveFailures(0);
           await new Promise((r) => setTimeout(r, 400));
         }
-        if (approved) lastSentTaskLineRef.current = null;
         if (approved) notifyChecklistUpdated();
         if (approved) {
           addOutputMessage({ type: "success", text: "Loop concluído. Pode executar novamente para a próxima tarefa." });
@@ -1056,7 +978,6 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
       setOpenFiles,
       loopAutoRunning,
       setLoopAutoRunning,
-      setGeminiFlowStatus,
       notifyChecklistUpdated,
     ]
   );
@@ -1123,36 +1044,6 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
     },
     [directoryHandle, addOutputMessage]
   );
-
-  const implementPhaseFromBuffer = useCallback(async () => {
-    const buffer = phaseBuffer;
-    const lines = phaseBufferPhaseLines;
-    if (!buffer?.length || !directoryHandle) return;
-    setPhaseBuffer([]);
-    setPhaseBufferPhaseLines(null);
-    const files = buffer.map((f) => ({ filePath: f.path, proposedContent: f.content }));
-    const phaseLines = lines ?? undefined;
-    const pendingFiles: Array<{ filePath: string; beforeContent: string | null; afterContent: string }> = [];
-    for (const f of files) {
-      const pathNorm = sanitizeFilePath(f.filePath) ?? f.filePath;
-      const contentSanitized = sanitizeCodeContent(f.proposedContent.trim());
-      let beforeContent: string | null = null;
-      try {
-        beforeContent = await readFileContentFs(directoryHandle, pathNorm);
-      } catch {
-        // Arquivo não existe
-      }
-      pendingFiles.push({ filePath: pathNorm, beforeContent, afterContent: contentSanitized });
-    }
-    setPendingDiffReview({
-      files: pendingFiles,
-      taskDescription: "",
-      checklistResult: { taskDescription: "" },
-      fromChat: true,
-      phaseLines,
-    });
-    setLoopStatus("awaiting_review");
-  }, [phaseBuffer, phaseBufferPhaseLines, directoryHandle]);
 
   /** Atualiza apenas a árvore de arquivos após criação/deleção. O checklist fica sob controle do usuário. */
   const refreshTreeOnly = useCallback(async () => {
@@ -1328,26 +1219,10 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
     getNextTaskFromContent,
     currentPhaseLines,
     setCurrentPhaseLines,
-    extensionOnline,
-    setExtensionOnline,
-    chatProvider,
-    setChatProvider,
-    phaseBuffer,
-    setPhaseBuffer,
-    phaseBufferPhaseLines,
-    setPhaseBufferPhaseLines,
-    implementPhaseFromBuffer,
-    geminiFlowStatus,
-    setGeminiFlowStatus,
-    isProcessing: geminiFlowStatus === "awaiting_gemini",
     executeEvaActions,
     pendingDeletionQueue,
     approvePendingDeletion,
     rejectPendingDeletion,
-    recordLastSentTask,
-    clearLastSentTask,
-    canSendTask,
-    getLastSentTaskLine,
     onChecklistUpdated,
     previewUrl,
     startLivePreview,

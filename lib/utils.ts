@@ -4,7 +4,7 @@
 
 /**
  * Renomeia arquivo .txt para extensão correta quando o conteúdo é código (JS, HTML, CSS).
- * Regra: se o Gemini retornar .txt com código, renomear antes de propor ao usuário.
+ * Regra: se o código vier com extensão .txt mas for código, renomear antes de propor ao usuário.
  */
 export function fixTxtFilenameIfCode(
   filename: string,

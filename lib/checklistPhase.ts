@@ -304,7 +304,7 @@ export function findTasksMatchingSavedFiles(
 
 /**
  * Procura pela última seção ## Fase X que contenha tarefas pendentes ([ ]).
- * Usado para identificar em qual fase estamos antes de pedir o prompt ao Gemini.
+ * Usado para identificar em qual fase estamos.
  */
 export function getCurrentPhaseFromChecklist(checklistContent: string): number {
   const lines = checklistContent.split("\n");

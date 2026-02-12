@@ -131,7 +131,7 @@ export function BottomPanel() {
           >
             {outputMessages.length === 0 ? (
               <p className="text-ds-text-muted-light dark:text-ds-text-muted text-sm">
-                Mensagens do fluxo de automação aparecerão aqui (ex.: &quot;Analisando checklist...&quot;, &quot;Aguardando resposta do Gemini...&quot;).
+                Mensagens do fluxo de automação aparecerão aqui (ex.: &quot;Analisando checklist...&quot;).
               </p>
             ) : (
               outputMessages.map((msg) => (

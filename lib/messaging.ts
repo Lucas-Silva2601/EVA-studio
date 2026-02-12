@@ -103,7 +103,7 @@ const PING_TIMEOUT_MS = 10000;
 
 /**
  * Envia EVA_PING para a extensão. Se o content script estiver na página, responde EVA_PONG.
- * Timeout de 10s para evitar "Extensão não detectada" enquanto o Gemini está gerando.
+ * Timeout de 10s para evitar "Extensão não detectada" enquanto a extensão está processando.
  */
 export function pingExtension(): Promise<boolean> {
   return new Promise((resolve) => {
@@ -174,11 +174,11 @@ export interface WaitForCodeError {
 export const FILENAME_ASK_GROQ = "__ASK_GROQ__";
 
 /**
- * Extrai nome de arquivo da resposta do Gemini: regex /FILE:\s*([a-zA-Z0-9._\-\/]+)/i em TODO o texto.
+ * Extrai nome de arquivo do texto: regex /FILE:\s*([a-zA-Z0-9._\-\/]+)/i em TODO o texto.
  * Se encontrar FILE: index.html (ou qualquer extensão), a IDE DEVE usar esse nome.
  * Se não encontrar, retorna null → IDE usa FILENAME_ASK_GROQ e pausa para pedir nome (Groq ou usuário) antes de salvar.
  */
-function extractFileNameFromGeminiResponse(rawCode: string): string | null {
+function extractFileNameFromResponse(rawCode: string): string | null {
   const path = extractFilePathFromFullText(rawCode) ?? extractFilePathStrict(rawCode);
   return path ?? null;
 }
@@ -219,7 +219,7 @@ function normalizeToFiles(p: CodeResponsePayload): Array<{ name: string; content
   }
   const fromMarkdown = parseCodeBlocksFromMarkdown(rawCode);
   const filteredMarkdown = filterSnippetOrCommand(fromMarkdown);
-  const fileFromText = extractFileNameFromGeminiResponse(rawCode);
+  const fileFromText = extractFileNameFromResponse(rawCode);
   if (filteredMarkdown.length > 0) {
     if (fileFromText && filteredMarkdown.length === 1) {
       const content = stripFilenameComment(filteredMarkdown[0].content);
@@ -277,7 +277,7 @@ export function waitForCodeFromExtension(
       resolved = true;
       clearTimeout(handshakeTimer);
       unsubscribe();
-      resolve({ ok: false, error: `Timeout: extensão não respondeu em ${timeoutMs / 1000}s. Verifique se o Gemini (gemini.google.com) está aberto e a extensão instalada.` });
+      resolve({ ok: false, error: `Timeout: extensão não respondeu em ${timeoutMs / 1000}s. Verifique se a extensão está instalada e a página de destino aberta.` });
     }, timeoutMs);
 
     const unsubscribe = onExtensionMessage((type, payload) => {

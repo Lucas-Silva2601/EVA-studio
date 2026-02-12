@@ -43,7 +43,7 @@ export function extractFilePathFromFirstTwoLines(text: string): string | null {
   return null;
 }
 
-/** Procura FILE: em todo o texto primeiro; depois nas primeiras linhas (resposta completa do Gemini). */
+/** Procura FILE: em todo o texto primeiro; depois nas primeiras linhas. */
 export function extractFilePathStrict(text: string): string | null {
   const fromFull = extractFilePathFromFullText(text);
   if (fromFull) return fromFull;
@@ -145,7 +145,7 @@ export function stripFilenameComment(content: string): string {
 
 /**
  * Se o texto não tiver blocos ``` mas começar com FILE: ou // FILE: na primeira linha,
- * trata como um único arquivo (formato retornado pelo Gemini).
+ * trata como um único arquivo.
  */
 export function parseSingleFileWithFilePrefix(text: string): ParsedCodeFile | null {
   const trimmed = text.trim();

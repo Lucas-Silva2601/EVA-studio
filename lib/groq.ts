@@ -45,7 +45,7 @@ export interface ChatResponse {
   isTruncated: boolean;
 }
 
-export type ChatProvider = "groq" | "gemini";
+export type ChatProvider = "groq";
 
 async function groqFetchChat(payload: unknown, signal?: AbortSignal): Promise<ChatResponse> {
   const res = await fetch("/api/groq", {
@@ -187,7 +187,7 @@ export async function validateFileAndTask(payload: {
 }
 
 /**
- * Fase 12 (Autocura): Analista analisa o erro e retorna texto + prompt sugerido para o Gemini. Não gera código.
+ * Fase 12 (Autocura): Analista analisa o erro e retorna texto e sugestão de correção. Não gera código.
  */
 export async function reportErrorToAnalyst(payload: {
   taskDescription?: string | null;
@@ -202,11 +202,10 @@ export async function reportErrorToAnalyst(payload: {
 }
 
 /**
- * Chat com o Analista (Groq ou Gemini). A IA orquestra; não gera código.
+ * Chat com o Analista (Groq). A IA orquestra e pode gerar código via [EVA_ACTION].
  * projectId identifica o projeto nesta conversa (ex.: nome da pasta).
  */
 export async function chatWithAnalyst(payload: {
-  /** groq (padrão) ou gemini */
   provider?: ChatProvider;
   messages: Array<{ role: "user" | "assistant"; content: string }>;
   /** Identificador do projeto (ex.: nome da pasta) para o Analista identificar a conversa. */
@@ -246,43 +245,7 @@ export async function chatToChecklistTasks(payload: {
 }
 
 /**
- * Orquestrador: gera o prompt para enviar ao Gemini (EVA Bridge). Fase X + tópico(s) atual(is).
- * phaseNumber nunca deve ser estático: use getCurrentPhaseFromChecklist(checklistContent) quando possível.
- * taskDescriptions: quando passado, gera prompt para fase completa (todos os subtópicos em uma resposta).
- */
-export async function getPromptForGemini(payload: {
-  phaseNumber: number | string;
-  taskDescription: string;
-  taskDescriptions?: string[];
-  projectContext?: string | null;
-  projectDescription?: string | null;
-}): Promise<string> {
-  const phaseNum = Number(payload.phaseNumber);
-  const phase = Number.isFinite(phaseNum) && phaseNum >= 1 ? phaseNum : 1;
-  const result = await groqFetch("prompt_for_gemini", {
-    phaseNumber: phase,
-    taskDescription: payload.taskDescription,
-    taskDescriptions: payload.taskDescriptions,
-    projectContext: payload.projectContext ?? null,
-    projectDescription: payload.projectDescription ?? null,
-  });
-  return result.trim();
-}
-
-/**
- * Gera o prompt para enviar ao Gemini para criar o plano em fases (docs/fase-1.md, docs/fase-2.md, ...).
- * Usado quando o usuário diz o que quer criar e ainda não existe plano em docs/.
- */
-export async function getCreatePlanPrompt(payload: {
-  userRequest: string;
-  projectDescription?: string | null;
-}): Promise<string> {
-  const result = await groqFetch("create_plan", payload);
-  return result.trim();
-}
-
-/**
- * Quando a resposta do Gemini não contém FILE: na 1ª/2ª linha, pergunta ao Analista: "Qual o nome deste arquivo?"
+ * Quando o código não contém FILE: na 1ª/2ª linha, pergunta ao Analista: "Qual o nome deste arquivo?"
  */
 export async function suggestFilename(content: string): Promise<string> {
   const result = await groqFetch("suggest_filename", { content });
