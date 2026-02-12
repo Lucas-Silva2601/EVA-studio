@@ -24,7 +24,7 @@
     if (ideTabId) {
       try {
         const tab = await chrome.tabs.get(ideTabId);
-        ideOk = !!tab && (tab.url?.startsWith("http://localhost:3000") || tab.url?.startsWith("http://127.0.0.1:3000"));
+        ideOk = !!tab && (tab.url?.startsWith("http://localhost:3000") || tab.url?.startsWith("http://localhost:3001") || tab.url?.startsWith("http://127.0.0.1:3000") || tab.url?.startsWith("http://127.0.0.1:3001"));
       } catch (_) {}
     }
     if (geminiTabId) {

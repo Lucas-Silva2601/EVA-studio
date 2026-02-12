@@ -38,7 +38,7 @@ export type ExtensionMessageHandler = (
 /**
  * Envia o prompt à extensão Chrome (content script na página da IDE repassa ao background).
  * Tipo de mensagem exato: EVA_STUDIO_FROM_PAGE + payload.type === EVA_PROMPT_SEND.
- * Só tem efeito se a extensão EVA Studio Bridge estiver instalada e a página for localhost:3000 ou 127.0.0.1:3000.
+ * Só tem efeito se a extensão EVA Studio Bridge estiver instalada e a página for localhost:3001 ou 127.0.0.1:3001.
  *
  * O chamador deve garantir que a tarefa é a próxima na sequência do checklist (getFirstPendingTaskLine)
  * e que não está reenviando a mesma tarefa (trava canSendTask/recordLastSentTask) antes de chamar esta função.

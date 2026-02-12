@@ -326,9 +326,13 @@ async function spawnServerOnPort(
   });
 }
 
+/** Porta preferida do Live Preview (evita conflito com apps em 3000). Fallback: 3002. */
+const LIVE_PREVIEW_PORT = 3001;
+const LIVE_PREVIEW_PORT_FALLBACK = 3002;
+
 /**
  * Inicia um servidor estático no WebContainer e retorna a URL quando pronto.
- * Sequência: mount -> aguarda 1s -> spawn. Tenta porta 3000, fallback 3001.
+ * Sequência: mount -> aguarda 1s -> spawn. Usa porta 3001 (fallback 3002) para evitar conflito com a porta 3000.
  */
 export async function startWebContainerServer(files: WebContainerFile[]): Promise<string> {
   const wc = await getWebContainer();
@@ -340,9 +344,9 @@ export async function startWebContainerServer(files: WebContainerFile[]): Promis
   await new Promise((r) => setTimeout(r, 1000));
 
   try {
-    return await spawnServerOnPort(wc, 3000);
+    return await spawnServerOnPort(wc, LIVE_PREVIEW_PORT);
   } catch {
-    return spawnServerOnPort(wc, 3001);
+    return spawnServerOnPort(wc, LIVE_PREVIEW_PORT_FALLBACK);
   }
 }
 

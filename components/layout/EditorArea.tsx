@@ -19,6 +19,7 @@ export function EditorArea() {
     saveCurrentFile,
     previewUrl,
     startLivePreview,
+    stopLivePreview,
   } = useIdeState();
 
   const activeFile = openFiles.find((f) => f.path === activeFilePath);
@@ -150,6 +151,18 @@ export function EditorArea() {
           <Globe className="w-4 h-4" aria-hidden />
           {previewStarting ? "Iniciando…" : previewUrl ? "Abrir Preview" : "Live Preview"}
         </button>
+        {previewUrl && (
+          <button
+            type="button"
+            onClick={() => stopLivePreview()}
+            className="flex items-center gap-2 px-3 py-2 shrink-0 text-sm text-ds-text-secondary-light dark:text-ds-text-secondary hover:text-ds-text-error hover:bg-ds-surface-hover-light dark:hover:bg-ds-surface-hover focus:outline-none focus-visible:ring-1 focus-visible:ring-ds-accent-neon"
+            aria-label="Interromper Live Preview"
+            title="Interromper Live Preview"
+          >
+            <Square className="w-4 h-4" aria-hidden />
+            Interromper
+          </button>
+        )}
         <button
           type="button"
           onClick={() => handleSave()}
