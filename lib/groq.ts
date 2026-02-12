@@ -47,11 +47,12 @@ export interface ChatResponse {
 
 export type ChatProvider = "groq" | "gemini";
 
-async function groqFetchChat(payload: unknown): Promise<ChatResponse> {
+async function groqFetchChat(payload: unknown, signal?: AbortSignal): Promise<ChatResponse> {
   const res = await fetch("/api/groq", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ action: "chat", payload }),
+    signal,
   });
 
   let data: { result?: string; is_truncated?: boolean; error?: string } = {};
@@ -213,10 +214,12 @@ export async function chatWithAnalyst(payload: {
   projectContext?: string | null;
   openFileContext?: { path: string; content: string } | null;
   checklistContext?: string | null;
-  /** Imagens em Base64 (apenas Gemini; Groq não suporta). */
+  /** Imagens em Base64 (Groq vision). */
   images?: Array<{ base64: string; mimeType: string }>;
+  /** Sinal para cancelar a requisição (ex.: botão Interromper). */
+  signal?: AbortSignal;
 }): Promise<ChatResponse> {
-  const response = await groqFetchChat(payload);
+  const response = await groqFetchChat(payload, payload.signal);
   return {
     content: response.content.trim(),
     isTruncated: response.isTruncated,

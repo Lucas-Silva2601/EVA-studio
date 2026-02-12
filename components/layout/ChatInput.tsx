@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
-import { Send, ImagePlus, Infinity, X, Loader2 } from "lucide-react";
-import type { ChatProvider } from "@/lib/groq";
+import { useRef, useEffect, useCallback } from "react";
+import { Send, ImagePlus, X, Loader2, Square } from "lucide-react";
 
 const MAX_HEIGHT = 200;
 const ACCEPT_IMAGE = "image/png,image/jpeg,image/webp,image/gif";
@@ -15,11 +14,12 @@ interface ChatInputProps {
   onSend: (images: ChatInputImage[]) => void;
   disabled?: boolean;
   loading?: boolean;
-  chatProvider: ChatProvider;
-  onChatProviderChange: (p: ChatProvider) => void;
   images: ChatInputImage[];
   onImagesChange: (images: ChatInputImage[]) => void;
   placeholder?: string;
+  /** Exibe botão "Interromper" quando a resposta está sendo gerada. */
+  showStopButton?: boolean;
+  onStop?: () => void;
 }
 
 export function ChatInput({
@@ -28,15 +28,14 @@ export function ChatInput({
   onSend,
   disabled = false,
   loading = false,
-  chatProvider,
-  onChatProviderChange,
   images,
   onImagesChange,
   placeholder = "Mensagem para o Analista...",
+  showStopButton = false,
+  onStop,
 }: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [popoverOpen, setPopoverOpen] = useState(false);
 
   const adjustHeight = useCallback(() => {
     const el = textareaRef.current;
@@ -117,61 +116,6 @@ export function ChatInput({
       )}
       <div className="flex gap-1.5 items-end rounded-lg border border-ds-border-light dark:border-ds-border bg-[var(--vscode-input)] focus-within:ring-1 focus-within:ring-ds-accent-neon transition-all duration-200">
         <div className="flex items-center gap-0.5 pl-2 pb-1.5 shrink-0">
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setPopoverOpen((o) => !o)}
-              className="rounded p-1 text-ds-text-secondary-light dark:text-ds-text-secondary hover:text-ds-accent-neon hover:bg-ds-surface-hover-light dark:hover:bg-ds-surface-hover focus:outline-none focus-visible:ring-1 focus-visible:ring-ds-accent-neon disabled:opacity-50"
-              aria-label="Selecionar modelo de IA"
-              title="Modelo de IA"
-            >
-              <Infinity className="w-4 h-4" />
-            </button>
-            {popoverOpen && (
-              <>
-                <div
-                  className="fixed inset-0 z-10"
-                  aria-hidden
-                  onClick={() => setPopoverOpen(false)}
-                />
-                <div
-                  className="absolute bottom-full left-0 mb-1 z-20 rounded-lg border border-ds-border-light dark:border-ds-border bg-ds-surface-light dark:bg-ds-surface shadow-lg py-1 min-w-[160px]"
-                  role="menu"
-                >
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      onChatProviderChange("groq");
-                      setPopoverOpen(false);
-                    }}
-                    className={`w-full text-left px-3 py-2 text-xs font-medium focus:outline-none focus-visible:ring-1 focus-visible:ring-ds-accent-neon ${
-                      chatProvider === "groq"
-                        ? "bg-ds-accent-neon/20 text-ds-accent-neon"
-                        : "text-ds-text-primary-light dark:text-ds-text-primary hover:bg-ds-surface-hover-light dark:hover:bg-ds-surface-hover"
-                    }`}
-                  >
-                    Groq (Analista)
-                  </button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      onChatProviderChange("gemini");
-                      setPopoverOpen(false);
-                    }}
-                    className={`w-full text-left px-3 py-2 text-xs font-medium focus:outline-none focus-visible:ring-1 focus-visible:ring-ds-accent-neon ${
-                      chatProvider === "gemini"
-                        ? "bg-ds-accent-neon/20 text-ds-accent-neon"
-                        : "text-ds-text-primary-light dark:text-ds-text-primary hover:bg-ds-surface-hover-light dark:hover:bg-ds-surface-hover"
-                    }`}
-                  >
-                    Gemini 2.0 Flash
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
           <input
             ref={fileInputRef}
             type="file"
@@ -184,7 +128,7 @@ export function ChatInput({
             onClick={() => fileInputRef.current?.click()}
             className="rounded p-1 text-ds-text-secondary-light dark:text-ds-text-secondary hover:text-ds-accent-neon hover:bg-ds-surface-hover-light dark:hover:bg-ds-surface-hover focus:outline-none focus-visible:ring-1 focus-visible:ring-ds-accent-neon disabled:opacity-50"
             aria-label="Enviar imagem"
-            title="Enviar imagem (usa Gemini)"
+            title="Anexar imagem para o Analista (Groq) analisar"
           >
             <ImagePlus className="w-4 h-4" />
           </button>
@@ -204,6 +148,17 @@ export function ChatInput({
           }}
           aria-label="Mensagem do chat"
         />
+        {showStopButton && onStop ? (
+          <button
+            type="button"
+            onClick={onStop}
+            className="shrink-0 rounded bg-ds-surface-hover-light dark:bg-ds-surface-hover text-ds-text-primary-light dark:text-ds-text-primary p-1.5 mb-1.5 mr-1.5 hover:bg-ds-text-error/10 hover:text-ds-text-error focus:outline-none focus-visible:ring-1 focus-visible:ring-ds-accent-neon"
+            aria-label="Interromper resposta"
+            title="Interromper resposta"
+          >
+            <Square className="w-4 h-4" aria-hidden />
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={handleSendClick}
@@ -211,7 +166,7 @@ export function ChatInput({
           className="shrink-0 rounded bg-ds-accent-light dark:bg-ds-accent-neon text-white dark:text-gray-900 p-1.5 mb-1.5 mr-1.5 hover:bg-ds-accent-light-hover dark:hover:bg-ds-accent-neon-hover shadow-[var(--ds-glow-neon)] focus:outline-none focus-visible:ring-1 focus-visible:ring-ds-accent-neon focus-visible:ring-offset-1 focus-visible:ring-offset-ds-surface-light dark:focus-visible:ring-offset-ds-surface disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-ds-surface-light dark:disabled:bg-ds-surface disabled:text-ds-text-muted-light dark:disabled:text-ds-text-muted disabled:shadow-none"
           aria-label="Enviar mensagem"
         >
-          {loading ? (
+          {loading && !showStopButton ? (
             <Loader2 className="w-4 h-4 animate-spin" aria-hidden />
           ) : (
             <Send className="w-4 h-4" />

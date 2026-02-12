@@ -71,8 +71,6 @@ export function ChatSidebar() {
     canSendTask,
     getLastSentTaskLine,
     onChecklistUpdated,
-    chatProvider,
-    setChatProvider,
     createFileWithContent,
     refreshFileTree,
   } = useIdeState();
@@ -89,6 +87,11 @@ export function ChatSidebar() {
   const [pendingImages, setPendingImages] = useState<ChatInputImage[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const autoAdvanceDoneRef = useRef(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  const handleStopGenerating = useCallback(() => {
+    abortControllerRef.current?.abort();
+  }, []);
 
   const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
   const lastIsTruncated = lastMessage?.role === "assistant" && lastMessage?.isTruncated === true;
@@ -174,6 +177,8 @@ export function ChatSidebar() {
     const lastAssistant = lastMessage?.role === "assistant" ? lastMessage : null;
     if (!lastAssistant) return;
     setLoadingContinue(true);
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
     try {
       const continuationUserMsg: ChatMessage = {
         role: "user",
@@ -190,12 +195,13 @@ export function ChatSidebar() {
           ? await getProjectContext(directoryHandle, fileTree)
           : "";
       const reply = await chatWithAnalyst({
-        provider: chatProvider,
+        provider: "groq",
         messages: historyWithContinuation,
         projectId,
         projectContext: projectContext || undefined,
         openFileContext,
         checklistContext: checklistContext || undefined,
+        signal: controller.signal,
       });
       const mergedContent = lastAssistant.content + reply.content;
       setMessages((prev) => {
@@ -291,9 +297,14 @@ export function ChatSidebar() {
         }
       }
     } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") {
+        addOutputMessage({ type: "info", text: "Continuação interrompida." });
+        return;
+      }
       const errorMsg = err instanceof Error ? err.message : "Erro ao continuar.";
       addOutputMessage({ type: "error", text: errorMsg });
     } finally {
+      abortControllerRef.current = null;
       setLoadingContinue(false);
     }
   }, [
@@ -307,7 +318,6 @@ export function ChatSidebar() {
     fileTree,
     activeFile,
     addOutputMessage,
-    chatProvider,
     extensionOnline,
     getChecklistContentForContext,
     getPhaseOfFirstPendingTask,
@@ -354,16 +364,13 @@ export function ChatSidebar() {
   const handleSend = async (imgs: ChatInputImage[] = []) => {
     const text = input.trim();
     if ((!text && imgs.length === 0) || loading) return;
-    if (imgs.length > 0 && chatProvider === "groq") {
-      addOutputMessage({ type: "warning", text: "Imagens exigem Gemini. Alternando para Gemini automaticamente." });
-      setChatProvider("gemini");
-    }
-    const effectiveProvider = imgs.length > 0 ? "gemini" : chatProvider;
     setInput("");
     setPendingImages([]);
     const userMsg: ChatMessage = { role: "user", content: text || "[Imagem anexada]" };
     setMessages((prev) => [...prev, userMsg]);
     setLoading(true);
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
 
     try {
       const history = [...messages, userMsg];
@@ -378,13 +385,14 @@ export function ChatSidebar() {
           : "";
 
       const reply = await chatWithAnalyst({
-        provider: effectiveProvider,
+        provider: "groq",
         messages: history,
         images: imgs.length > 0 ? imgs.map((i) => ({ base64: i.base64, mimeType: i.mimeType })) : undefined,
         projectId,
         projectContext: projectContext || undefined,
         openFileContext,
         checklistContext: checklistContext || undefined,
+        signal: controller.signal,
       });
 
       setMessages((prev) => [
@@ -523,6 +531,13 @@ export function ChatSidebar() {
         }
       }
     } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") {
+        setMessages((prev) => [
+          ...prev,
+          { role: "assistant", content: "_Resposta interrompida pelo usuário._" },
+        ]);
+        return;
+      }
       const errorMsg = err instanceof Error ? err.message : "Erro ao enviar mensagem.";
       setMessages((prev) => [
         ...prev,
@@ -530,6 +545,7 @@ export function ChatSidebar() {
       ]);
       addOutputMessage({ type: "error", text: errorMsg });
     } finally {
+      abortControllerRef.current = null;
       setLoading(false);
     }
   };
@@ -762,7 +778,7 @@ export function ChatSidebar() {
       >
         {messages.length === 0 && (
           <p className="text-ds-text-primary-light dark:text-ds-text-primary text-xs py-2">
-            Converse com o Analista ({chatProvider === "gemini" ? "Gemini" : "Groq"}). Projeto: <strong>{projectId}</strong>. Implementação é feita pelo Gemini (botão Fase N ou extensão).
+            Converse com o Analista (Groq). Projeto: <strong>{projectId}</strong>. Implementação é feita pelo Gemini (botão Fase N ou extensão).
           </p>
         )}
         {messages.map((m, i) => (
@@ -897,11 +913,11 @@ export function ChatSidebar() {
           onSend={handleSend}
           disabled={loading}
           loading={loading}
-          chatProvider={chatProvider}
-          onChatProviderChange={setChatProvider}
           images={pendingImages}
           onImagesChange={setPendingImages}
           placeholder="Mensagem para o Analista..."
+          showStopButton={loading || loadingContinue}
+          onStop={handleStopGenerating}
         />
       </div>
     </div>

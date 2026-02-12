@@ -11,6 +11,8 @@ import { GoogleGenAI } from "@google/genai";
 
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const GROQ_MODEL = "llama-3.3-70b-versatile";
+/** Modelo com visão para análise de imagens (máx. 5 imagens, base64 até 4MB por request). */
+const GROQ_VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct";
 
 /** Mensagem de erro quando a Groq retorna 429 (após todas as tentativas). */
 const GROQ_RATE_LIMIT_MSG =
@@ -24,6 +26,8 @@ function delay(ms: number): Promise<void> {
 }
 
 type GroqMessage = { role: "system" | "user" | "assistant"; content: string };
+type GroqContentPart = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
+type GroqVisionMessage = { role: "system" | "user" | "assistant"; content: string | GroqContentPart[] };
 
 interface CallGroqResult {
   content: string;
@@ -90,6 +94,57 @@ async function callGroqWithMeta(messages: GroqMessage[]): Promise<CallGroqResult
 async function callGroq(messages: GroqMessage[]): Promise<string> {
   const { content } = await callGroqWithMeta(messages);
   return content;
+}
+
+/** Chama a Groq com modelo de visão; messages pode ter content como string ou array (text + image_url). */
+async function callGroqVision(messages: GroqVisionMessage[]): Promise<CallGroqResult> {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) {
+    throw new Error("GROQ_API_KEY não configurada. Defina em .env.local.");
+  }
+
+  const body = JSON.stringify({
+    model: GROQ_VISION_MODEL,
+    messages,
+    max_tokens: 2048,
+    temperature: 0.3,
+  });
+
+  let lastError: Error | null = null;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const res = await fetch(GROQ_API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body,
+    });
+
+    if (res.ok) {
+      const data = (await res.json()) as {
+        choices?: Array<{ message?: { content?: string }; finish_reason?: string }>;
+      };
+      const choice = data.choices?.[0];
+      const content = choice?.message?.content?.trim() ?? "";
+      const finish_reason = choice?.finish_reason ?? "unknown";
+      return { content, finish_reason };
+    }
+
+    const text = await res.text();
+    if (res.status === 429) {
+      lastError = new Error(GROQ_RATE_LIMIT_MSG);
+      if (attempt < MAX_RETRIES) {
+        const waitMs = RETRY_DELAYS_MS[attempt];
+        await delay(waitMs);
+        continue;
+      }
+      throw lastError;
+    }
+    throw new Error(`Groq Vision API: ${res.status} - ${text || res.statusText}`);
+  }
+
+  throw lastError ?? new Error(GROQ_RATE_LIMIT_MSG);
 }
 
 /** Verifica se o conteúdo termina com um bloco de código Markdown aberto (sem fechamento). */
@@ -213,15 +268,16 @@ REGRAS ESTRITAS:
 - PROMPT PARA O GEMINI: Ao sugerir mudanças em um arquivo existente, o Gemini DEVE retornar o conteúdo COMPLETO do arquivo com as modificações aplicadas. Isso permite que o Diff Editor da IDE compare as versões corretamente (verde/vermelho) sem perder código anterior.
 - Responda de forma clara e objetiva. Foco no projeto **${projectId}**.`;
 
-/** Chat com o Engenheiro Chefe (Groq). Groq NÃO gera código: só orquestra. Quem implementa é o Gemini. */
+/** Chat com o Engenheiro Chefe (Groq). Groq NÃO gera código: só orquestra. Suporta imagens via modelo de visão. */
 async function chatWithAnalyst(payload: {
   messages: Array<{ role: "user" | "assistant"; content: string }>;
   projectId: string;
   projectContext?: string | null;
   openFileContext?: { path: string; content: string } | null;
   checklistContext?: string | null;
+  images?: Array<{ base64: string; mimeType: string }>;
 }): Promise<{ content: string; is_truncated: boolean }> {
-  const { messages, projectId, projectContext, openFileContext, checklistContext } = payload;
+  const { messages, projectId, projectContext, openFileContext, checklistContext, images } = payload;
 
   const systemPrompt = CHAT_SYSTEM_PROMPT_TEMPLATE(projectId);
 
@@ -238,6 +294,32 @@ async function chatWithAnalyst(payload: {
   const injectedContext = contextParts.length > 0
     ? "\n\n" + contextParts.join("\n\n")
     : "";
+
+  const hasImages = images != null && images.length > 0;
+  const lastMsg = messages[messages.length - 1];
+  const isLastUser = lastMsg?.role === "user";
+
+  if (hasImages && isLastUser && lastMsg) {
+    const textWithContext = lastMsg.content + injectedContext;
+    const contentParts: GroqContentPart[] = [{ type: "text", text: textWithContext || "Analise esta(s) imagem(ns)." }];
+    for (const img of images.slice(0, 5)) {
+      contentParts.push({
+        type: "image_url",
+        image_url: { url: `data:${img.mimeType};base64,${img.base64}` },
+      });
+    }
+    const visionMessages: GroqVisionMessage[] = [
+      { role: "system", content: systemPrompt },
+      ...messages.slice(0, -1).map((m) => ({
+        role: m.role as "user" | "assistant",
+        content: m.content,
+      })),
+      { role: "user", content: contentParts },
+    ];
+    const { content, finish_reason } = await callGroqVision(visionMessages);
+    const is_truncated = finish_reason === "length" || hasOpenCodeBlock(content);
+    return { content, is_truncated };
+  }
 
   const userMessages: GroqMessage[] = [
     { role: "system", content: systemPrompt },
@@ -583,12 +665,10 @@ export async function POST(request: NextRequest) {
           checklistContext: p?.checklistContext ?? null,
           images: p?.images,
         };
-        if (p?.images?.length && p?.provider !== "gemini") {
-          throw new Error("Imagens são suportadas apenas pelo Gemini. Use provider: 'gemini'.");
-        }
-        chatResponse = p?.provider === "gemini"
-          ? await chatWithGemini(chatPayload)
-          : await chatWithAnalyst(chatPayload);
+        chatResponse = await chatWithAnalyst({
+          ...chatPayload,
+          images: p?.images,
+        });
         result = chatResponse.content;
         break;
       }

@@ -333,13 +333,6 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
       addOutputMessage({ type: "info", text: "Abra uma pasta antes de iniciar o Live Preview." });
       return;
     }
-    if (!isWebContainerSupported()) {
-      addOutputMessage({
-        type: "error",
-        text: `Live Preview indisponível: ${getWebContainerUnavailableReason()} Verifique next.config.js (headers COOP/COEP) e recarregue a página (Ctrl+Shift+R).`,
-      });
-      return;
-    }
     const paths = getFilePathsFromTree(fileTree);
     const hasAnyHtml = paths.some((p) => p.toLowerCase().endsWith(".html"));
     if (!hasAnyHtml) {
@@ -366,35 +359,34 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
         addOutputMessage({ type: "warning", text: "Nenhum arquivo servível encontrado (html, css, js, etc.)." });
         return;
       }
-      const fileList = files.map((f) => f.path).join(", ");
-      const hasIndex = files.some((f) => f.path === "index.html");
-      addOutputMessage({
-        type: "info",
-        text: `[PREVIEW] Arquivos enviados ao WebContainer (${files.length}): ${fileList}. index.html na raiz: ${hasIndex ? "sim" : "não"}`,
+      const origin = typeof window !== "undefined" ? window.location.origin : "";
+      const res = await fetch(`${origin}/api/preview/sync`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ files: files.map((f) => ({ path: f.path, contents: f.contents })) }),
       });
-      await new Promise((r) => setTimeout(r, 500));
-      const url = await startWebContainerServer(files);
-      addOutputMessage({ type: "info", text: "[INFO] Aguardando estabilização do servidor...." });
-      await new Promise((resolve) => setTimeout(resolve, 800));
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as { error?: string }).error ?? `Sync falhou: ${res.status}`);
+      }
+      const url = `${origin}/api/preview/`;
       setPreviewUrl(url);
+      addOutputMessage({
+        type: "success",
+        text: `Live Preview ativo em ${url} (mesma origem do EVA Studio). Salve os arquivos e recarregue a aba do preview para ver alterações.`,
+      });
       const newTab = window.open(url, "_blank");
       if (!newTab) {
         addOutputMessage({
           type: "warning",
-          text: "O bloqueador de pop-ups impediu a abertura da aba de teste. Por favor, permita pop-ups para este site.",
+          text: "O bloqueador de pop-ups impediu a abertura da aba. Permita pop-ups ou acesse o link acima manualmente.",
         });
-      } else {
-        addOutputMessage({ type: "success", text: "Live Preview aberto em nova aba. Alterações serão refletidas ao salvar." });
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      const hint =
-        /SharedArrayBuffer|crossOriginIsolated|cross-origin|COOP|COEP/i.test(msg)
-          ? " Recarregue a página (Ctrl+Shift+R) e use localhost ou HTTPS."
-          : "";
       addOutputMessage({
         type: "error",
-        text: `Erro ao iniciar Live Preview: ${msg}${hint}`,
+        text: `Erro ao iniciar Live Preview: ${msg}`,
       });
     }
   }, [directoryHandle, fileTree, buildPreviewFiles, addOutputMessage]);
@@ -403,9 +395,21 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
 
   const refreshPreviewFiles = useCallback(async () => {
     if (!previewUrl) return;
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    const isApiPreview = previewUrl.startsWith(origin) && previewUrl.includes("/api/preview");
     try {
       const files = await buildPreviewFiles();
-      if (files.length > 0) await updateWebContainerFiles(files);
+      if (files.length === 0) return;
+      if (isApiPreview) {
+        const res = await fetch(`${origin}/api/preview/sync`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ files: files.map((f) => ({ path: f.path, contents: f.contents })) }),
+        });
+        if (!res.ok) return;
+      } else {
+        await updateWebContainerFiles(files);
+      }
     } catch {
       // Falha silenciosa no hot reload
     }
