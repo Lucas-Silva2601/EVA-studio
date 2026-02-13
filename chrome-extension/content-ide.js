@@ -22,6 +22,9 @@
  *     type: 'EVA_STUDIO_TO_PAGE',
  *     payload: { type: 'EVA_CODE_RETURNED', payload: { files?, code?, filename?, language?, error? } }
  *   }, origin);
+ *
+ * chrome.runtime.onMessage: respostas são síncronas (EVA_CODE_RETURNED é repassado e sendResponse chamado na hora),
+ * portanto retornamos false. Para handlers assíncronos seria obrigatório return true e chamar sendResponse depois.
  */
 
 (function () {
@@ -30,7 +33,7 @@
   const SOURCE = "eva-content-ide";
 
   function sendToBackground(type, payload) {
-    chrome.runtime.sendMessage({ source: SOURCE, type, payload }, (response) => {
+    chrome.runtime.sendMessage({ source: SOURCE, type, payload }, () => {
       if (chrome.runtime.lastError) {
         console.warn("[CONTENT-IDE] chrome.runtime.lastError ao enviar ao background.", chrome.runtime.lastError.message);
         notifyPage("EVA_CODE_RETURNED", { error: "Extensão não disponível. Verifique se a EVA Studio Bridge está instalada." });

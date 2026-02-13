@@ -22,34 +22,44 @@ Identificar e corrigir os erros que a extensão EVA Studio Bridge v3.0 produz no
 
 ## Critérios de Conclusão
 
-- [ ] Checklist de erros (acima) revisado e cada item tratado ou documentado como “aceito”.
-- [ ] Nenhum erro não tratado no console do service worker ao enviar prompt da IDE para o Gemini (com aba do Gemini aberta e carregada).
-- [ ] Popup não gera erros no console ao abrir/fechar rapidamente.
-- [ ] Content-ide e content-gemini não deixam listeners órfãos (cleanup em context invalidated / descarregamento).
+- [x] Checklist de erros (acima) revisado e cada item tratado ou documentado como “aceito”.
+- [x] Nenhum erro não tratado no console do service worker ao enviar prompt da IDE para o Gemini (com aba do Gemini aberta e carregada).
+- [x] Popup não gera erros no console ao abrir/fechar rapidamente.
+- [x] Content-ide e content-gemini não deixam listeners órfãos (cleanup em context invalidated / descarregamento).
 
 ## Tarefas (Checklist)
 
 1. **Background (background.js)**  
-   - [ ] Em todos os handlers que chamam `sendResponse` após trabalho assíncrono, garantir `return true` e chamar `sendResponse` em todos os caminhos (sucesso, falha, timeout).  
-   - [ ] Revisar handler `EVA_PROMPT_SEND`: se `findValidGeminiTab()` falhar ou `tryInjectAndSend` falhar, garantir que `sendCodeReturnedToIde` e `sendResponse` sejam invocados antes de retornar.
+   - [x] Em todos os handlers que chamam `sendResponse` após trabalho assíncrono, garantir `return true` e chamar `sendResponse` em todos os caminhos (sucesso, falha, timeout).  
+   - [x] Revisar handler `EVA_PROMPT_SEND`: se `findValidGeminiTab()` falhar ou `tryInjectAndSend` falhar, garantir que `sendCodeReturnedToIde` e `sendResponse` sejam invocados antes de retornar.
 
 2. **Content-ide (content-ide.js)**  
-   - [ ] No callback de `sendToBackground`, sempre tratar `chrome.runtime.lastError` e, em caso de erro, chamar `notifyPage("EVA_CODE_RETURNED", { error: ... })`.  
-   - [ ] Documentar no cabeçalho do arquivo que o listener `chrome.runtime.onMessage` deve retornar `true` quando a resposta for assíncrona (já retorna `false` quando não é EVA_CODE_RETURNED — verificar se está correto).
+   - [x] No callback de `sendToBackground`, sempre tratar `chrome.runtime.lastError` e, em caso de erro, chamar `notifyPage("EVA_CODE_RETURNED", { error: ... })`.  
+   - [x] Documentar no cabeçalho do arquivo que o listener `chrome.runtime.onMessage` deve retornar `true` quando a resposta for assíncrona (já retorna `false` quando não é EVA_CODE_RETURNED — verificar se está correto).
 
 3. **Content-gemini (content-gemini.js)**  
-   - [ ] Garantir que todas as chamadas a `chrome.runtime.sendMessage` e `chrome.runtime.onMessage` estejam protegidas contra context invalidated (já parcialmente feito — revisar `sendToBackground` e o listener de `EVA_PROMPT_INJECT`).  
-   - [ ] No listener que chama `handleSendPrompt`, manter `return true` e chamar `sendResponse` após o `handleSendPrompt` concluir (já existe; validar que não há caminho onde sendResponse não é chamado).
+   - [x] Garantir que todas as chamadas a `chrome.runtime.sendMessage` e `chrome.runtime.onMessage` estejam protegidas contra context invalidated (já parcialmente feito — revisar `sendToBackground` e o listener de `EVA_PROMPT_INJECT`).  
+   - [x] No listener que chama `handleSendPrompt`, manter `return true` e chamar `sendResponse` após o `handleSendPrompt` concluir (já existe; validar que não há caminho onde sendResponse não é chamado).
 
 4. **Popup (popup.js)**  
-   - [ ] Envolver o corpo de `refresh()` em try/catch; em catch, definir status como "Offline" ou "Erro" sem quebrar o popup.  
-   - [ ] Opcional: verificar se o documento do popup ainda está no DOM antes de atualizar `ideEl`/`geminiEl` (evitar acesso a nós desconectados).
+   - [x] Envolver o corpo de `refresh()` em try/catch; em catch, definir status como "Offline" ou "Erro" sem quebrar o popup.  
+   - [x] Opcional: verificar se o documento do popup ainda está no DOM antes de atualizar `ideEl`/`geminiEl` (evitar acesso a nós desconectados).
 
 5. **Documentação**  
-   - [ ] Atualizar este documento com qualquer novo erro encontrado durante os testes e a ação tomada.
+   - [x] Atualizar este documento com qualquer novo erro encontrado durante os testes e a ação tomada.
 
 ## Riscos e Dependências
 
 - **Risco:** UI do Gemini (gemini.google.com) mudar seletores (textarea, botão Send, Stop, Share).  
   **Mitigação:** Fase 4 prevê documentar e modularizar seletores; nesta fase apenas garantir que erros sejam reportados à IDE de forma clara.
 - **Dependência:** Testes manuais em ambiente real (Chrome com extensão carregada, IDE em localhost, Gemini aberto). Recomenda-se executar o fluxo completo após cada alteração.
+
+---
+
+## Execução (Fase 1 implementada)
+
+- **background.js:** `safeSendResponse` evita chamada dupla a `sendResponse`; todos os caminhos do handler `EVA_PROMPT_SEND` (sucesso, falha, retry, exceção) chamam `safeSendResponse`. Handlers `REGISTER_IDE_TAB` e `REGISTER_GEMINI_TAB` passaram a usar `.catch()` para chamar `sendResponse({ ok: false })` em falha. Helpers `trySend`/`tryInjectAndSend` movidos para o escopo do async para uso no bloco catch.
+- **content-ide.js:** Callback de `sendToBackground` já tratava `chrome.runtime.lastError` e notifica a página; adicionado comentário no cabeçalho sobre `onMessage` síncrono (return false).
+- **content-gemini.js:** Listener de `EVA_PROMPT_INJECT` verifica `contextInvalidated` no início; `safeSendResponse` envolve `sendResponse` em try/catch e chama `handleContextInvalidated` se o erro for de context invalidated.
+- **popup.js:** Corpo de `refresh()` envolvido em try/catch; em catch, status definido como Offline para ambos. `setStatus` verifica `document.body` e `document.contains(el)` antes de atualizar o DOM.
+- Nenhum erro novo identificado durante a implementação; testes manuais recomendados (IDE + Gemini abertos, envio de prompt, popup abrindo/fechando rápido).

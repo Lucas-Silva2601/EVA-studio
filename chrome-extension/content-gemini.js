@@ -508,10 +508,19 @@
   }
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-    if (message.type === "EVA_PROMPT_INJECT") {
-      handleSendPrompt(message.payload).then(() => sendResponse({ ok: true })).catch(() => sendResponse({ ok: false }));
-      return true;
+    if (contextInvalidated) return false;
+    if (message.type !== "EVA_PROMPT_INJECT") return false;
+    function safeSendResponse(value) {
+      if (contextInvalidated) return;
+      try {
+        sendResponse(value);
+      } catch (e) {
+        if (isContextInvalidatedError(e)) handleContextInvalidated();
+      }
     }
-    return false;
+    handleSendPrompt(message.payload)
+      .then(() => safeSendResponse({ ok: true }))
+      .catch(() => safeSendResponse({ ok: false }));
+    return true;
   });
 })();

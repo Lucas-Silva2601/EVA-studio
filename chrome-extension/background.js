@@ -66,92 +66,104 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (type === "REGISTER_IDE_TAB") {
     console.log("[EVA Bridge] Aba da IDE registrada:", sender.tab?.id);
-    setIdeTabId(sender.tab?.id).then(() => sendResponse({ ok: true }));
+    setIdeTabId(sender.tab?.id)
+      .then(() => sendResponse({ ok: true }))
+      .catch((err) => {
+        console.warn("[EVA Bridge] Falha ao registrar aba IDE:", err?.message);
+        try { sendResponse({ ok: false }); } catch (_) {}
+      });
     return true;
   }
 
   if (type === "EVA_PROMPT_SEND") {
     console.log("[EVA Bridge] EVA_PROMPT_SEND recebido, procurando aba do Gemini...");
-    (async () => {
-      const tabIdToUse = await findValidGeminiTab();
-      if (!tabIdToUse) {
-        console.warn("[EVA Bridge] Nenhuma aba do Gemini encontrada.");
-        sendCodeReturnedToIde({ error: "Abra o Google Gemini (gemini.google.com) em uma aba primeiro." });
-        sendResponse({ ok: false });
-        return;
-      }
-      const prompt = payload?.prompt ?? "";
-      const trySend = async (tabId) => {
-        return chrome.tabs.sendMessage(tabId, { type: "EVA_PROMPT_INJECT", payload: { prompt } });
-      };
-      const isReceivingEndError = (err) => {
-        const msg = (err?.message || "").toLowerCase();
-        return (
-          msg.includes("receiving end") ||
-          msg.includes("could not establish connection") ||
-          msg.includes("não foi possível estabelecer")
-        );
-      };
-      const tryInjectAndSend = async (tabId) => {
-        try {
-          await trySend(tabId);
-          return true;
-        } catch (err) {
-          if (!isReceivingEndError(err)) throw err;
-          console.log("[EVA Bridge] Content script ausente, injetando programaticamente...");
-          const injectTargets = [{ tabId }, { tabId, allFrames: true }];
-          for (let i = 0; i < injectTargets.length; i++) {
-            const target = injectTargets[i];
-            try {
-              await chrome.scripting.executeScript({
-                target,
-                files: ["content-gemini.js"],
-              });
-              for (const delayMs of [600, 1200, 2200]) {
-                await new Promise((r) => setTimeout(r, delayMs));
-                try {
-                  await trySend(tabId);
-                  return true;
-                } catch (retryErr) {
-                  if (!isReceivingEndError(retryErr)) throw retryErr;
-                }
-              }
-            } catch (injectErr) {
-              console.warn("[EVA Bridge] Injeção falhou (tentativa " + (i + 1) + "):", injectErr?.message || injectErr);
-            }
-          }
-          return false;
-        }
-      };
+    const prompt = payload?.prompt ?? "";
+    let responded = false;
+    function safeSendResponse(value) {
+      if (responded) return;
+      responded = true;
+      try { sendResponse(value); } catch (_) {}
+    }
+    const trySend = async (tabId) => {
+      return chrome.tabs.sendMessage(tabId, { type: "EVA_PROMPT_INJECT", payload: { prompt } });
+    };
+    const isReceivingEndError = (err) => {
+      const msg = (err?.message || "").toLowerCase();
+      return (
+        msg.includes("receiving end") ||
+        msg.includes("could not establish connection") ||
+        msg.includes("não foi possível estabelecer")
+      );
+    };
+    const tryInjectAndSend = async (tabId) => {
       try {
+        await trySend(tabId);
+        return true;
+      } catch (err) {
+        if (!isReceivingEndError(err)) throw err;
+        console.log("[EVA Bridge] Content script ausente, injetando programaticamente...");
+        const injectTargets = [{ tabId }, { tabId, allFrames: true }];
+        for (let i = 0; i < injectTargets.length; i++) {
+          const target = injectTargets[i];
+          try {
+            await chrome.scripting.executeScript({
+              target,
+              files: ["content-gemini.js"],
+            });
+            for (const delayMs of [600, 1200, 2200]) {
+              await new Promise((r) => setTimeout(r, delayMs));
+              try {
+                await trySend(tabId);
+                return true;
+              } catch (retryErr) {
+                if (!isReceivingEndError(retryErr)) throw retryErr;
+              }
+            }
+          } catch (injectErr) {
+            console.warn("[EVA Bridge] Injeção falhou (tentativa " + (i + 1) + "):", injectErr?.message || injectErr);
+          }
+        }
+        return false;
+      }
+    };
+    (async () => {
+      let tabIdToUse = null;
+      try {
+        tabIdToUse = await findValidGeminiTab();
+        if (!tabIdToUse) {
+          console.warn("[EVA Bridge] Nenhuma aba do Gemini encontrada.");
+          sendCodeReturnedToIde({ error: "Abra o Google Gemini (gemini.google.com) em uma aba primeiro." });
+          safeSendResponse({ ok: false });
+          return;
+        }
         const ok = await tryInjectAndSend(tabIdToUse);
         if (ok) {
           console.log("[EVA Bridge] EVA_PROMPT_INJECT enviado ao Gemini.");
-          sendResponse({ ok: true });
+          safeSendResponse({ ok: true });
         } else {
           sendCodeReturnedToIde({
             error:
               "Content script não disponível na aba do Gemini. Recarregue a aba (F5) em gemini.google.com e tente novamente.",
           });
-          sendResponse({ ok: false });
+          safeSendResponse({ ok: false });
         }
       } catch (err) {
         console.warn("[EVA Bridge] Falha ao enviar ao Gemini:", err?.message || err);
-        const retryTabId = await findValidGeminiTab();
-        if (retryTabId && retryTabId !== tabIdToUse) {
-          try {
+        try {
+          const retryTabId = await findValidGeminiTab();
+          if (retryTabId && retryTabId !== tabIdToUse) {
             const ok = await tryInjectAndSend(retryTabId);
             if (ok) {
               console.log("[EVA Bridge] EVA_PROMPT_INJECT enviado ao Gemini (retry).");
-              sendResponse({ ok: true });
+              safeSendResponse({ ok: true });
               return;
             }
-          } catch (_) {}
-        }
+          }
+        } catch (_) {}
         sendCodeReturnedToIde({
           error: "Aba do Gemini fechada ou indisponível. Recarregue a aba do Gemini (F5) e tente novamente.",
         });
-        sendResponse({ ok: false });
+        safeSendResponse({ ok: false });
       }
     })();
     return true;
@@ -166,7 +178,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (type === "REGISTER_GEMINI_TAB") {
     console.log("[EVA Bridge] Aba do Gemini registrada:", sender.tab?.id);
-    setGeminiTabId(sender.tab?.id).then(() => sendResponse({ ok: true }));
+    setGeminiTabId(sender.tab?.id)
+      .then(() => sendResponse({ ok: true }))
+      .catch((err) => {
+        console.warn("[EVA Bridge] Falha ao registrar aba Gemini:", err?.message);
+        try { sendResponse({ ok: false }); } catch (_) {}
+      });
     return true;
   }
 
