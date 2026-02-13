@@ -381,3 +381,38 @@ export function applyAllPhaseCompletions(checklistContent: string): string {
 export function ensureChecklistItemsUnchecked(content: string): string {
   return content.replace(/^(\s*[-–—−]\s*\[\s*)[xX](\s*\]\s*)/gm, "$1 $2");
 }
+
+/**
+ * Mescla conteúdo de checklist vindo do Gemini com o que já está no disco, preservando [x] das tarefas já concluídas.
+ * Assim, ao salvar docs/fase-2.md (ou qualquer fase), as tarefas [x] já concluídas não são desmarcadas.
+ * Comparação por descrição normalizada da tarefa (texto após o checkbox).
+ */
+export function mergeChecklistPhasePreservingCompleted(
+  currentContent: string,
+  incomingContent: string
+): string {
+  const currentLines = currentContent.split("\n");
+  const completedDescs = new Set<string>();
+  for (const line of currentLines) {
+    if (COMPLETED_TASK_REGEX.test(line)) {
+      const desc = extractTaskDescription(line);
+      if (desc) completedDescs.add(stripMarkdownFormatting(desc).toLowerCase().replace(/\s+/g, " ").trim());
+    }
+  }
+  const incomingLines = incomingContent.split("\n");
+  const result: string[] = [];
+  for (const line of incomingLines) {
+    if (PENDING_TASK_REGEX.test(line) || COMPLETED_TASK_REGEX.test(line)) {
+      const desc = extractTaskDescription(line);
+      const key = desc ? stripMarkdownFormatting(desc).toLowerCase().replace(/\s+/g, " ").trim() : "";
+      if (key && completedDescs.has(key)) {
+        result.push(line.replace(/\[\s*\]/, "[x]"));
+      } else {
+        result.push(line);
+      }
+    } else {
+      result.push(line);
+    }
+  }
+  return result.join("\n");
+}

@@ -40,6 +40,15 @@ export function MonacoWrapper({ path, content, language, onChange, theme = "dark
     return () => ro.disconnect();
   }, []);
 
+  // Sincroniza o conteúdo do editor quando ele é atualizado externamente (ex.: aceitar diff, arquivo salvo por outra ação).
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor || !path) return;
+    const model = editor.getModel();
+    if (!model || model.getValue() === content) return;
+    model.setValue(content);
+  }, [path, content]);
+
   return (
     <div ref={containerRef} className="h-full w-full" role="application" aria-label={`Editor: ${path}`}>
       <MonacoEditor

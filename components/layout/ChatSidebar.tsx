@@ -17,7 +17,7 @@ import {
   getRequestedPhaseNumber,
   isProjectCreationRequest,
 } from "@/lib/geminiPrompt";
-import { ensureChecklistItemsUnchecked } from "@/lib/checklistPhase";
+import { ensureChecklistItemsUnchecked, mergeChecklistPhasePreservingCompleted } from "@/lib/checklistPhase";
 
 export type ChatMessage = {
   role: "user" | "assistant";
@@ -65,6 +65,7 @@ export function ChatSidebar() {
     onChecklistUpdated,
     createFileWithContent,
     refreshFileTree,
+    readFileContent,
   } = useIdeState();
 
   const projectId = folderName ?? "Projeto não aberto";
@@ -123,7 +124,14 @@ export function ChatSidebar() {
         if (allChecklistPhases) {
           for (const f of normalizedFiles) {
             try {
-              await createFileWithContent(f.filePath, f.proposedContent);
+              let contentToSave = f.proposedContent;
+              try {
+                const currentOnDisk = await readFileContent(f.filePath);
+                contentToSave = mergeChecklistPhasePreservingCompleted(currentOnDisk, f.proposedContent);
+              } catch {
+                /* arquivo novo: usa conteúdo proposto (já com [ ]) */
+              }
+              await createFileWithContent(f.filePath, contentToSave);
             } catch (err) {
               addOutputMessage({ type: "error", text: `Erro ao salvar ${f.filePath}: ${(err as Error).message}` });
             }
@@ -139,8 +147,11 @@ export function ChatSidebar() {
           addOutputMessage({ type: "success", text: `Checklist inserido no projeto (${normalizedFiles.length} arquivo(s) em docs/).` });
           refreshFileTree().then(() => getChecklistProgress().then(setProgress));
         } else {
-          proposeChangesFromChat(normalizedFiles, { phaseLines: phaseLines ?? (task ? [task.taskLine] : undefined) });
-          const fileList = validFiles.map((f) => f.name).join(", ");
+          const codeFilesOnly = normalizedFiles.filter((f) => !isChecklistPhaseFile(f.filePath));
+          proposeChangesFromChat(codeFilesOnly.length > 0 ? codeFilesOnly : normalizedFiles, {
+            phaseLines: phaseLines ?? (task ? [task.taskLine] : undefined),
+          });
+          const fileList = (codeFilesOnly.length > 0 ? codeFilesOnly : normalizedFiles).map((f) => f.filePath).join(", ");
           setMessages((prev) => [
             ...prev,
             {
@@ -164,6 +175,7 @@ export function ChatSidebar() {
       createFileWithContent,
       refreshFileTree,
       getChecklistProgress,
+      readFileContent,
     ]
   );
 
@@ -412,11 +424,7 @@ export function ChatSidebar() {
         const checklistContent = await getChecklistContentForContext();
         const phaseTasks = await getTasksForPhase(checklistContent ?? "", requestedPhase);
         if (phaseTasks.length > 0) {
-          const projectContext =
-            fileTree.length > 0 ? await getProjectContext(directoryHandle, fileTree) : "";
-          const prompt = buildPromptForGeminiPhase(phaseTasks, {
-            projectContext: projectContext || undefined,
-          });
+          const prompt = buildPromptForGeminiPhase(phaseTasks);
           await sendTaskToGemini(prompt, undefined, phaseTasks.map((t) => t.taskLine));
         } else {
           addOutputMessage({

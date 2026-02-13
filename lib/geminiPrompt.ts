@@ -58,7 +58,7 @@ Gere agora os arquivos .md do checklist em fases. Use exatamente os nomes docs/f
 
 /**
  * Monta o prompt que será enviado ao Gemini para uma tarefa do checklist.
- * A extensão injeta esse texto na caixa do Gemini e dispara o envio.
+ * Estrutura clara para o Gemini: contexto, tarefa única, regras e formato de saída.
  */
 export function buildPromptForGemini(
   taskDescription: string,
@@ -68,26 +68,32 @@ export function buildPromptForGemini(
     fileTreeSummary?: string;
   }
 ): string {
+  const task = taskDescription.trim();
   const parts: string[] = [
-    "Você é o Programador da IDE EVA Studio. Execute a seguinte tarefa do checklist.",
+    "[PAPEL]",
+    "Você é o Programador da IDE EVA Studio. Gere apenas o código solicitado, sem texto explicativo fora dos blocos de código.",
     "",
-    "Tarefa:",
-    taskDescription.trim(),
+    "[TAREFA]",
+    task,
     "",
-    "Regras:",
-    "- Gere apenas o código necessário (HTML, CSS, JS, TS, React, etc.).",
-    "- Para cada arquivo, use FILE: caminho/arquivo na primeira linha do bloco de código (ex.: FILE: src/App.jsx).",
-    "- Se houver múltiplos arquivos, use um bloco de código por arquivo com FILE: no início.",
+    "[REGRAS]",
+    "- Um bloco de código por arquivo. Na primeira linha de cada bloco use exatamente: FILE: caminho/arquivo (ex.: FILE: src/App.jsx).",
+    "- Gere só o necessário (HTML, CSS, JS, TS, React, etc.). Sem comentários longos; código pronto para salvar.",
+    "- Mantenha o estilo e a estrutura já existentes no projeto quando houver contexto.",
   ];
 
   if (options?.projectContext && options.projectContext.length > 0) {
-    parts.push("", "Contexto do projeto (resumo):", options.projectContext.slice(0, 3000));
+    parts.push("", "[CONTEXTO DO PROJETO]", options.projectContext.slice(0, 3000));
   }
   if (options?.fileTreeSummary && options.fileTreeSummary.length > 0) {
-    parts.push("", "Estrutura relevante:", options.fileTreeSummary.slice(0, 1500));
+    parts.push("", "[ESTRUTURA RELEVANTE]", options.fileTreeSummary.slice(0, 1500));
   }
 
-  parts.push("", "Retorne o código pronto para ser salvo no projeto.");
+  parts.push(
+    "",
+    "[SAÍDA]",
+    "Retorne somente os blocos de código, cada um começando com FILE: caminho/arquivo na primeira linha. Nada antes nem depois dos blocos."
+  );
   return parts.join("\n");
 }
 
@@ -110,11 +116,11 @@ export function getRequestedPhaseNumber(message: string): number | null {
 
 /**
  * Monta o prompt para o Gemini executar TODAS as tarefas pendentes de uma fase.
- * Usado quando o usuário pede "implementar fase N" para enviar todas as tarefas da fase de uma vez.
+ * Envia só o essencial: papel, lista de tarefas da fase, regras e formato de saída (sem contexto grande).
  */
 export function buildPromptForGeminiPhase(
   tasks: Array<{ taskLine?: string; taskDescription: string }>,
-  options?: {
+  _options?: {
     projectContext?: string;
     fileTreeSummary?: string;
   }
@@ -122,26 +128,21 @@ export function buildPromptForGeminiPhase(
   if (tasks.length === 0) return "";
   const taskList = tasks
     .map((t, i) => `${i + 1}. ${t.taskDescription.trim()}`)
-    .join("\n\n");
-  const parts: string[] = [
-    "Você é o Programador da IDE EVA Studio. Execute TODAS as seguintes tarefas do checklist desta fase.",
+    .join("\n");
+  return [
+    "[PAPEL]",
+    "Você é o Programador da IDE EVA Studio. Implemente as tarefas abaixo, na ordem. Gere apenas código; sem texto fora dos blocos.",
     "",
-    "Tarefas (implemente todas, na ordem):",
+    "[TAREFAS]",
     taskList,
     "",
-    "Regras:",
-    "- Gere apenas o código necessário (HTML, CSS, JS, TS, React, etc.).",
-    "- Para cada arquivo, use FILE: caminho/arquivo na primeira linha do bloco de código (ex.: FILE: src/App.jsx).",
-    "- Se houver múltiplos arquivos, use um bloco de código por arquivo com FILE: no início.",
-  ];
-  if (options?.projectContext && options.projectContext.length > 0) {
-    parts.push("", "Contexto do projeto (resumo):", options.projectContext.slice(0, 3000));
-  }
-  if (options?.fileTreeSummary && options.fileTreeSummary.length > 0) {
-    parts.push("", "Estrutura relevante:", options.fileTreeSummary.slice(0, 1500));
-  }
-  parts.push("", "Retorne o código pronto para ser salvo no projeto.");
-  return parts.join("\n");
+    "[REGRAS]",
+    "- Um bloco por arquivo. Primeira linha do bloco: FILE: caminho/arquivo (ex.: FILE: src/Header.jsx).",
+    "- Implemente todas na ordem listada.",
+    "",
+    "[SAÍDA]",
+    "Somente blocos de código, cada um com FILE: na primeira linha. Nada antes nem depois.",
+  ].join("\n");
 }
 
 /** Regex para detectar "Enviando tarefa '...' para o Gemini" na resposta do Groq. */

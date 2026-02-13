@@ -543,7 +543,13 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
   const writeFileContent = useCallback(
     async (relativePath: string, content: string): Promise<void> => {
       if (!directoryHandle) throw new Error("Nenhuma pasta aberta.");
-      await writeFileContentFs(directoryHandle, relativePath, content);
+      const pathNorm = sanitizeFilePath(relativePath) ?? relativePath.replace(/\\/g, "/").trim();
+      await writeFileContentFs(directoryHandle, pathNorm, content);
+      setOpenFiles((prev) =>
+        prev.map((f) =>
+          (sanitizeFilePath(f.path) ?? f.path) === pathNorm ? { ...f, content, isDirty: false } : f
+        )
+      );
     },
     [directoryHandle]
   );
@@ -551,7 +557,13 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
   const createFileWithContent = useCallback(
     async (relativePath: string, content: string): Promise<void> => {
       if (!directoryHandle) throw new Error("Nenhuma pasta aberta.");
-      await createFileWithContentFs(directoryHandle, relativePath, content);
+      const pathNorm = sanitizeFilePath(relativePath) ?? relativePath.replace(/\\/g, "/").trim();
+      await createFileWithContentFs(directoryHandle, pathNorm, content);
+      setOpenFiles((prev) =>
+        prev.map((f) =>
+          (sanitizeFilePath(f.path) ?? f.path) === pathNorm ? { ...f, content, isDirty: false } : f
+        )
+      );
     },
     [directoryHandle]
   );
@@ -879,16 +891,11 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
           const pathNormalized = sanitizeFilePath(file.filePath) ?? file.filePath;
           const codeSanitized = sanitizeCodeContent(file.afterContent.trim());
           if (file.beforeContent === null) {
-            await createFileWithContentFs(directoryHandle, pathNormalized, codeSanitized);
+            await createFileWithContent(pathNormalized, codeSanitized);
           } else {
-            await writeFileContentFs(directoryHandle, pathNormalized, codeSanitized);
+            await writeFileContent(pathNormalized, codeSanitized);
           }
           addOutputMessage({ type: "success", text: `Arquivo salvo: ${pathNormalized}` });
-          setOpenFiles((prev) =>
-            prev.map((f) =>
-              f.path === pathNormalized ? { ...f, content: codeSanitized, isDirty: false } : f
-            )
-          );
         }
         const tree = await listDirectoryRecursive(directoryHandle);
         setFileTree(tree);
@@ -1006,6 +1013,8 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
       readChecklistFs,
       writeChecklistFs,
       setOpenFiles,
+      writeFileContent,
+      createFileWithContent,
       loopAutoRunning,
       setLoopAutoRunning,
       notifyChecklistUpdated,
@@ -1132,7 +1141,7 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
           if (a.action === "CREATE_FILE") {
             const path = a.path.replace(/^\//, "").trim();
             if (!path) continue;
-            await createFileWithContentFs(directoryHandle, path, a.content ?? "");
+            await createFileWithContent(path, a.content ?? "");
             await refreshTreeOnly();
             addOutputMessage({ type: "info", text: `Analista criou arquivo: ${path}` });
           } else if (a.action === "CREATE_DIRECTORY") {
@@ -1170,6 +1179,7 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
       directoryHandle,
       addOutputMessage,
       refreshTreeOnly,
+      createFileWithContent,
     ]
   );
 
@@ -1183,10 +1193,10 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
         const contentSanitized = sanitizeCodeContent(file.content.trim());
         try {
           await readFileContentFs(directoryHandle, pathNorm);
-          await writeFileContentFs(directoryHandle, pathNorm, contentSanitized);
+          await writeFileContent(pathNorm, contentSanitized);
           addOutputMessage({ type: "success", text: `Atualizado: ${pathNorm}` });
         } catch {
-          await createFileWithContentFs(directoryHandle, pathNorm, contentSanitized);
+          await createFileWithContent(pathNorm, contentSanitized);
           addOutputMessage({ type: "success", text: `Criado: ${pathNorm}` });
         }
       }
@@ -1196,7 +1206,7 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
     } catch (err) {
       addOutputMessage({ type: "error", text: `Erro ao executar Gênesis: ${(err as Error).message}` });
     }
-  }, [genesisQueue, directoryHandle, addOutputMessage]);
+  }, [genesisQueue, directoryHandle, addOutputMessage, writeFileContent, createFileWithContent]);
 
   const value: IdeStateContextValue = {
     fileTree,
