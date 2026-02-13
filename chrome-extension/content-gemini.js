@@ -9,16 +9,55 @@
  * - Extrai blocos de código e FILE: path/filename; envia EVA_CODE_CAPTURED ao background
  *
  * Protocolo: EVA_PROMPT_SEND (IDE -> Extensão), EVA_CODE_RETURNED (Extensão -> IDE).
- * Seletores: atualize conforme mudanças no DOM do Gemini (inspecione a página).
+ * Seletores: GEMINI_SELECTORS abaixo. Se a UI do Gemini mudar, inspecione a página (F12), atualize os arrays
+ * e teste o fluxo (enviar prompt da IDE → código retornar). Ver docs/qa-extensao.md.
  *
- * Arquivo >250 linhas por decisão: extensão sem build step; seções (seletores, parsing, captura, handlers) documentadas no código.
+ * Arquivo >250 linhas por decisão: extensão sem build step; seções (1) Config (2) DOM (3) Parsing (4) Captura (5) Handlers.
  */
 (function () {
   "use strict";
 
+  /* ---------- (1) Config e constantes ---------- */
   const SOURCE = "eva-content-gemini";
   let contextInvalidated = false;
   let registerInterval = null;
+
+  /** Seletores do DOM do Gemini. Atualize quando a UI do site mudar (inspecione em gemini.google.com). */
+  const GEMINI_SELECTORS = {
+    prompt: [
+      '[role="combobox"]',
+      'textarea[placeholder*="Enter"]',
+      'textarea[placeholder*="Message"]',
+      'textarea[placeholder*="Type"]',
+      'textarea[aria-label*="prompt"]',
+      '[contenteditable="true"][role="textbox"]',
+      '[contenteditable="true"]',
+      "textarea",
+      'input[type="text"]',
+    ],
+    sendButton: [
+      'button[type="submit"]',
+      'button[aria-label*="Send"]',
+      'button[aria-label*="Enviar"]',
+      'button[data-icon="send"]',
+      '[data-testid="send-button"]',
+      'form button[type="submit"]',
+      'button[aria-label*="Submit"]',
+    ],
+    stop: [
+      'button[aria-label*="Stop"]',
+      'button[aria-label*="Parar"]',
+      '[data-icon="stop"]',
+      'button:has(svg[aria-label*="Stop"])',
+      '[title*="Stop"]',
+    ],
+    share: [
+      'button[aria-label*="Share"]',
+      'button[aria-label*="Compartilhar"]',
+      '[data-icon="share"]',
+      '[title*="Share"]',
+    ],
+  };
 
   function isContextInvalidatedError(err) {
     const msg = (err && err.message) ? String(err.message) : "";
@@ -68,56 +107,35 @@
     if (document.visibilityState === "visible") registerTab();
   });
 
-  function findPromptInput() {
-    const selectors = [
-      '[role="combobox"]',
-      'textarea[placeholder*="Enter"]',
-      'textarea[placeholder*="Message"]',
-      'textarea[placeholder*="Type"]',
-      'textarea[aria-label*="prompt"]',
-      '[contenteditable="true"][role="textbox"]',
-      '[contenteditable="true"]',
-      "textarea",
-      'input[type="text"]',
-    ];
+  /* ---------- (2) Helpers de DOM e seletores ---------- */
+  function findFirstVisible(selectors, checkDisabled) {
     for (const sel of selectors) {
       const el = document.querySelector(sel);
-      if (el && el.offsetParent !== null && (el.offsetWidth > 0 || el.offsetHeight > 0)) return el;
+      if (el && el.offsetParent !== null && (el.offsetWidth > 0 || el.offsetHeight > 0)) {
+        if (checkDisabled && el.disabled) continue;
+        return el;
+      }
     }
     return null;
   }
 
+  function findPromptInput() {
+    return findFirstVisible(GEMINI_SELECTORS.prompt, false);
+  }
+
   function findSendButton() {
-    const selectors = [
-      'button[type="submit"]',
-      'button[aria-label*="Send"]',
-      'button[aria-label*="Enviar"]',
-      'button[data-icon="send"]',
-      '[data-testid="send-button"]',
-      'form button[type="submit"]',
-      'button[aria-label*="Submit"]',
-    ];
-    for (const sel of selectors) {
-      const el = document.querySelector(sel);
-      if (el && el.offsetParent !== null && !el.disabled) return el;
-    }
+    const btn = findFirstVisible(GEMINI_SELECTORS.sendButton, true);
+    if (btn) return btn;
     const form = document.querySelector("form");
     if (form) {
-      const btn = form.querySelector("button:not([disabled])");
-      if (btn) return btn;
+      const formBtn = form.querySelector("button:not([disabled])");
+      if (formBtn) return formBtn;
     }
     return null;
   }
 
   function isStopVisible() {
-    const stopSelectors = [
-      'button[aria-label*="Stop"]',
-      'button[aria-label*="Parar"]',
-      '[data-icon="stop"]',
-      'button:has(svg[aria-label*="Stop"])',
-      '[title*="Stop"]',
-    ];
-    for (const sel of stopSelectors) {
+    for (const sel of GEMINI_SELECTORS.stop) {
       const el = document.querySelector(sel);
       if (el && el.offsetParent !== null) return true;
     }
@@ -125,13 +143,7 @@
   }
 
   function isShareVisible() {
-    const shareSelectors = [
-      'button[aria-label*="Share"]',
-      'button[aria-label*="Compartilhar"]',
-      '[data-icon="share"]',
-      '[title*="Share"]',
-    ];
-    for (const sel of shareSelectors) {
+    for (const sel of GEMINI_SELECTORS.share) {
       const el = document.querySelector(sel);
       if (el && el.offsetParent !== null) return true;
     }
@@ -170,9 +182,7 @@
     return false;
   }
 
-  /**
-   * Extrai path da primeira linha (FILE: path/filename ou // FILE: path).
-   */
+  /* ---------- (3) Parsing e extração de código ---------- */
   function parseFileFromFirstLine(code) {
     const first = (code || "").split("\n")[0] || "";
     const match = first.match(/(?:FILE|filename)\s*:\s*([^\s\n]+)/i);
@@ -368,10 +378,8 @@
   const CAPTURE_TIMEOUT_MS = 90000;
   const POLL_INTERVAL_MS = 200;
 
-  /**
-   * Aguarda fim da resposta: Stop sumir (streaming acabou) OU Share aparecer.
-   * Otimizado: poll mais rápido, debounce mínimo, e retry ativo quando Stop já sumiu mas blocos ainda não apareceram no DOM.
-   */
+  /* ---------- (4) Captura de resposta (waitForResponseComplete) ---------- */
+  /** Aguarda fim da resposta: Stop sumir (streaming acabou) OU Share aparecer; debounce evita captura prematura. */
   function waitForResponseComplete() {
     return new Promise((resolve) => {
       let debounceTimer = null;
@@ -450,6 +458,7 @@
    * Envia o prompt ao Gemini. Valida payload.prompt como string.
    * Limite de tamanho do prompt: não aplicado aqui; a UI do Gemini pode impor limite próprio.
    */
+  /* ---------- (5) Handlers de mensagem ---------- */
   async function handleSendPrompt(payload) {
     const raw = payload != null && typeof payload === "object" ? payload.prompt : undefined;
     const prompt = typeof raw === "string" ? raw : "";
