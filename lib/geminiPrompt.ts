@@ -91,6 +91,59 @@ export function buildPromptForGemini(
   return parts.join("\n");
 }
 
+/**
+ * Detecta pedido de implementar/executar uma fase específica (ex.: "implementar fase 1", "executar fase 2").
+ * Retorna o número da fase ou null se não for um pedido de fase.
+ */
+export function getRequestedPhaseNumber(message: string): number | null {
+  if (!message || typeof message !== "string") return null;
+  const t = message.trim();
+  const match = t.match(
+    /(?:implementar|executar|fazer|rodar)\s+(?:a\s+)?fase\s*[:\s]*(\d+)|fase\s*[:\s]*(\d+)\s*(?:implementar|executar)?/i
+  );
+  if (match) {
+    const n = parseInt(match[1] ?? match[2] ?? "0", 10);
+    return n >= 1 ? n : null;
+  }
+  return null;
+}
+
+/**
+ * Monta o prompt para o Gemini executar TODAS as tarefas pendentes de uma fase.
+ * Usado quando o usuário pede "implementar fase N" para enviar todas as tarefas da fase de uma vez.
+ */
+export function buildPromptForGeminiPhase(
+  tasks: Array<{ taskLine?: string; taskDescription: string }>,
+  options?: {
+    projectContext?: string;
+    fileTreeSummary?: string;
+  }
+): string {
+  if (tasks.length === 0) return "";
+  const taskList = tasks
+    .map((t, i) => `${i + 1}. ${t.taskDescription.trim()}`)
+    .join("\n\n");
+  const parts: string[] = [
+    "Você é o Programador da IDE EVA Studio. Execute TODAS as seguintes tarefas do checklist desta fase.",
+    "",
+    "Tarefas (implemente todas, na ordem):",
+    taskList,
+    "",
+    "Regras:",
+    "- Gere apenas o código necessário (HTML, CSS, JS, TS, React, etc.).",
+    "- Para cada arquivo, use FILE: caminho/arquivo na primeira linha do bloco de código (ex.: FILE: src/App.jsx).",
+    "- Se houver múltiplos arquivos, use um bloco de código por arquivo com FILE: no início.",
+  ];
+  if (options?.projectContext && options.projectContext.length > 0) {
+    parts.push("", "Contexto do projeto (resumo):", options.projectContext.slice(0, 3000));
+  }
+  if (options?.fileTreeSummary && options.fileTreeSummary.length > 0) {
+    parts.push("", "Estrutura relevante:", options.fileTreeSummary.slice(0, 1500));
+  }
+  parts.push("", "Retorne o código pronto para ser salvo no projeto.");
+  return parts.join("\n");
+}
+
 /** Regex para detectar "Enviando tarefa '...' para o Gemini" na resposta do Groq. */
 const ENVIANDO_TAREFA_REGEX = /Enviando\s+tarefa\s+['"]([^'"]+)['"]\s+para\s+o\s+Gemini/i;
 

@@ -11,8 +11,10 @@ import { ChatCodeBlock } from "@/components/layout/ChatCodeBlock";
 import { waitForCodeFromExtension, FILENAME_ASK_GROQ } from "@/lib/messaging";
 import {
   buildPromptForGemini,
+  buildPromptForGeminiPhase,
   buildProjectPlanPrompt,
   extractPromptFromAssistantMessage,
+  getRequestedPhaseNumber,
   isProjectCreationRequest,
 } from "@/lib/geminiPrompt";
 import { ensureChecklistItemsUnchecked } from "@/lib/checklistPhase";
@@ -54,6 +56,7 @@ export function ChatSidebar() {
     setNextPendingTask,
     getChecklistProgress,
     getNextTaskFromContent,
+    getTasksForPhase,
     loopAutoRunning,
     setLoopAutoRunning,
     currentPhaseLines,
@@ -393,6 +396,7 @@ export function ChatSidebar() {
       const promptForGemini = extractPromptFromAssistantMessage(reply.content);
       const isFirstCommand = messages.length === 0;
       const wantsProjectCreation = isProjectCreationRequest(userMsg.content);
+      const requestedPhase = getRequestedPhaseNumber(userMsg.content);
       if (promptForGemini) {
         sendTaskToGemini(promptForGemini);
       } else if (isFirstCommand && wantsProjectCreation) {
@@ -403,6 +407,23 @@ export function ChatSidebar() {
           });
         } else {
           sendTaskToGemini(buildProjectPlanPrompt(userMsg.content));
+        }
+      } else if (requestedPhase != null && directoryHandle) {
+        const checklistContent = await getChecklistContentForContext();
+        const phaseTasks = await getTasksForPhase(checklistContent ?? "", requestedPhase);
+        if (phaseTasks.length > 0) {
+          const projectContext =
+            fileTree.length > 0 ? await getProjectContext(directoryHandle, fileTree) : "";
+          const prompt = buildPromptForGeminiPhase(phaseTasks, {
+            projectContext: projectContext || undefined,
+          });
+          await sendTaskToGemini(prompt, undefined, phaseTasks.map((t) => t.taskLine));
+        } else {
+          addOutputMessage({
+            type: "info",
+            text: `Nenhuma tarefa pendente na Fase ${requestedPhase}. Todas já foram concluídas ou a fase não existe.`,
+          });
+          sendNextTaskToGeminiIfAny();
         }
       } else {
         sendNextTaskToGeminiIfAny();

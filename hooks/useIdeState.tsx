@@ -158,6 +158,8 @@ interface IdeStateContextValue {
   setLoopAutoRunning: (v: boolean) => void;
   /** Obtém a primeira tarefa pendente a partir do conteúdo do checklist (sem exibir no Output). */
   getNextTaskFromContent: (checklistContent: string) => Promise<{ taskLine: string; taskDescription: string } | null>;
+  /** Obtém TODAS as tarefas pendentes de uma fase (para "implementar fase N"). */
+  getTasksForPhase: (checklistContent: string, phaseNumber: number) => Promise<Array<{ taskLine: string; taskDescription: string }>>;
   /** Linhas do checklist da fase atual (Entrega de Fase); usadas ao clicar em "Implementar" em mensagem multi-arquivo. */
   currentPhaseLines: string[] | null;
   setCurrentPhaseLines: (v: string[] | null) => void;
@@ -713,6 +715,20 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
+  const getTasksForPhase = useCallback(
+    async (
+      checklistContent: string,
+      phaseNumber: number
+    ): Promise<Array<{ taskLine: string; taskDescription: string }>> => {
+      const raw = await analyzeChecklistGroq(checklistContent, phaseNumber);
+      if (!Array.isArray(raw)) return [];
+      return raw
+        .filter((t): t is { taskLine: string; taskDescription: string } => Boolean(t?.taskDescription?.trim()))
+        .map((t) => ({ taskLine: t.taskLine ?? "", taskDescription: t.taskDescription }));
+    },
+    []
+  );
+
   const saveCurrentFile = useCallback(async () => {
     if (!directoryHandle) {
       addOutputMessage({ type: "info", text: "Abra uma pasta antes de salvar." });
@@ -1237,6 +1253,7 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
     loopAutoRunning,
     setLoopAutoRunning,
     getNextTaskFromContent,
+    getTasksForPhase,
     currentPhaseLines,
     setCurrentPhaseLines,
     executeEvaActions,

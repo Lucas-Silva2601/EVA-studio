@@ -373,9 +373,9 @@
     return blocks;
   }
 
-  /* Poll 200ms; debounce 350ms após Stop sumir, 250ms após Share; timeout de captura 90s. Evita captura prematura e espera excessiva. */
-  const DEBOUNCE_AFTER_STOP_MS = 350;
-  const DEBOUNCE_AFTER_SHARE_MS = 250;
+  /* Poll 200ms; debounce após Stop sumir (200ms) ou Share (150ms); timeout 90s. Valores reduzidos para menor latência percebida. */
+  const DEBOUNCE_AFTER_STOP_MS = 200;
+  const DEBOUNCE_AFTER_SHARE_MS = 150;
   const CAPTURE_TIMEOUT_MS = 90000;
   const POLL_INTERVAL_MS = 200;
 
