@@ -1,6 +1,15 @@
 /**
  * Tipos globais da IDE EVA Studio.
+ * Contratos da extensão (CodeResponsePayload, ErrorPayload) estão em lib/messaging.ts e são re-exportados abaixo para referência do protocolo (docs/protocolo-extensao-ide, Fase 4).
  */
+export type {
+  CodeResponsePayload,
+  ErrorPayload,
+  ExtensionMessageType,
+  ExtensionMessagePayload,
+  WaitForCodeResult,
+  WaitForCodeError,
+} from "@/lib/messaging";
 
 export interface FileNode {
   name: string;

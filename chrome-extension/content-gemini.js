@@ -5,11 +5,13 @@
  * FUNCIONALIDADE:
  * - Registra esta aba como "aba do Gemini" no background
  * - Recebe prompt do background (EVA_PROMPT_INJECT), insere no input e envia
- * - MutationObserver avançado: captura resposta apenas quando ícone "Stop" some ou botão "Share" aparece
+ * - MutationObserver: captura resposta quando Stop some ou Share aparecer (debounce evita captura prematura).
  * - Extrai blocos de código e FILE: path/filename; envia EVA_CODE_CAPTURED ao background
  *
  * Protocolo: EVA_PROMPT_SEND (IDE -> Extensão), EVA_CODE_RETURNED (Extensão -> IDE).
  * Seletores: atualize conforme mudanças no DOM do Gemini (inspecione a página).
+ *
+ * Arquivo >250 linhas por decisão: extensão sem build step; seções (seletores, parsing, captura, handlers) documentadas no código.
  */
 (function () {
   "use strict";
@@ -66,9 +68,6 @@
     if (document.visibilityState === "visible") registerTab();
   });
 
-  /**
-   * Encontra a caixa de prompt do Gemini (textarea, contenteditable ou role="combobox").
-   */
   function findPromptInput() {
     const selectors = [
       '[role="combobox"]',
@@ -88,9 +87,6 @@
     return null;
   }
 
-  /**
-   * Encontra o botão de envio.
-   */
   function findSendButton() {
     const selectors = [
       'button[type="submit"]',
@@ -113,9 +109,6 @@
     return null;
   }
 
-  /**
-   * Detecta se o ícone/botão "Stop" está visível (resposta em streaming).
-   */
   function isStopVisible() {
     const stopSelectors = [
       'button[aria-label*="Stop"]',
@@ -131,9 +124,6 @@
     return false;
   }
 
-  /**
-   * Detecta se o botão "Share" está visível (resposta finalizada).
-   */
   function isShareVisible() {
     const shareSelectors = [
       'button[aria-label*="Share"]',

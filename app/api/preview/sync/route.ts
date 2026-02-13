@@ -10,7 +10,8 @@ export async function POST(request: NextRequest) {
     }
     setPreviewFiles(files);
     return NextResponse.json({ ok: true, count: files.length });
-  } catch {
+  } catch (err) {
+    console.warn("[api] preview sync error", { message: err instanceof Error ? err.message : "Invalid request" });
     return NextResponse.json({ error: "Invalid request" }, { status: 400 });
   }
 }

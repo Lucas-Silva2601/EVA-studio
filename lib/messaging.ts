@@ -1,4 +1,4 @@
-import { blocksToFiles, parseCodeBlocksFromMarkdown, parseSingleFileWithFilePrefix, extractFilePathStrict, extractFilePathFromFullText, stripFilenameComment, inferFilenameFromContent, isSnippetOrCommand } from "@/lib/markdownCodeParser";
+import { normalizeToFiles } from "@/lib/normalizeExtensionPayload";
 
 /**
  * Protocolo de comunicação IDE ↔ Extensão Chrome (EVA Studio Bridge).
@@ -189,78 +189,7 @@ export interface WaitForCodeError {
   error: string;
 }
 
-/** Nome sentinela quando FILE: não foi encontrado na 1ª/2ª linha; a IDE deve perguntar ao Groq antes de salvar. */
-export const FILENAME_ASK_GROQ = "__ASK_GROQ__";
-
-/**
- * Extrai nome de arquivo do texto: regex /FILE:\s*([a-zA-Z0-9._\-\/]+)/i em TODO o texto.
- * Se encontrar FILE: index.html (ou qualquer extensão), a IDE DEVE usar esse nome.
- * Se não encontrar, retorna null → IDE usa FILENAME_ASK_GROQ e pausa para pedir nome (Groq ou usuário) antes de salvar.
- */
-function extractFileNameFromResponse(rawCode: string): string | null {
-  const path = extractFilePathFromFullText(rawCode) ?? extractFilePathStrict(rawCode);
-  return path ?? null;
-}
-
-/** Detecta se o nome é genérico (file_0.txt, file_1.txt etc.) — indica que a extensão não conseguiu inferir. */
-function isGenericFilename(name: string): boolean {
-  return /^file_\d+\.txt$/i.test(name?.trim() ?? "");
-}
-
-/**
- * Normaliza o payload da extensão para lista de arquivos.
- * Regra: FILE: em todo o texto ou em blocos markdown → usa esse nome. Se não encontrar, pausa com FILENAME_ASK_GROQ (pedir nome antes de salvar).
- * Fallback: quando extensão envia file_N.txt, tenta inferir nome correto do conteúdo.
- */
-/** Filtra arquivos que são apenas comando/snippet (não devem ser salvos no projeto). */
-function filterSnippetOrCommand(files: Array<{ name: string; content: string }>): Array<{ name: string; content: string }> {
-  return files.filter((f) => !isSnippetOrCommand(f.content));
-}
-
-function normalizeToFiles(p: CodeResponsePayload): Array<{ name: string; content: string }> {
-  if (p.files && p.files.length > 0) {
-    const mapped = p.files.map((f) => {
-      if (isGenericFilename(f.name)) {
-        const inferred = inferFilenameFromContent(f.content);
-        if (inferred) return { name: inferred, content: stripFilenameComment(f.content) };
-      }
-      return f;
-    });
-    return filterSnippetOrCommand(mapped);
-  }
-  if (p.blocks && p.blocks.length > 0) return filterSnippetOrCommand(blocksToFiles(p.blocks));
-  const rawCode = (p.code ?? "").trim();
-  if (!rawCode) return [];
-  const singleWithPrefix = parseSingleFileWithFilePrefix(rawCode);
-  if (singleWithPrefix) {
-    if (isSnippetOrCommand(singleWithPrefix.content)) return [];
-    return [singleWithPrefix];
-  }
-  const fromMarkdown = parseCodeBlocksFromMarkdown(rawCode);
-  const filteredMarkdown = filterSnippetOrCommand(fromMarkdown);
-  const fileFromText = extractFileNameFromResponse(rawCode);
-  if (filteredMarkdown.length > 0) {
-    if (fileFromText && filteredMarkdown.length === 1) {
-      const content = stripFilenameComment(filteredMarkdown[0].content);
-      return [{ name: fileFromText, content }];
-    }
-    const hasFilePrefix = /FILE\s*:/i.test(rawCode);
-    if (hasFilePrefix && filteredMarkdown.length === 1) {
-      const strictPath = extractFilePathStrict(rawCode);
-      if (strictPath) {
-        const content = stripFilenameComment(filteredMarkdown[0].content);
-        return [{ name: strictPath, content }];
-      }
-    }
-    return filteredMarkdown;
-  }
-  if (isSnippetOrCommand(rawCode)) return [];
-  const strictPath = fileFromText ?? extractFilePathStrict(rawCode);
-  const inferred = inferFilenameFromContent(rawCode);
-  const name = strictPath ?? p.filename?.trim() ?? inferred ?? FILENAME_ASK_GROQ;
-  const content = strictPath || inferred ? stripFilenameComment(rawCode) : rawCode;
-  return [{ name, content }];
-}
+export { FILENAME_ASK_GROQ } from "@/lib/normalizeExtensionPayload";
 
 const EXTENSION_HANDSHAKE_MS = 10000;
 
@@ -296,6 +225,7 @@ export function waitForCodeFromExtension(
       resolved = true;
       clearTimeout(handshakeTimer);
       unsubscribe();
+      console.warn("[messaging] waitForCodeFromExtension timeout", { timeoutMs });
       resolve({ ok: false, error: `Timeout: extensão não respondeu em ${timeoutMs / 1000}s. Verifique se a extensão está instalada e a página de destino aberta.` });
     }, timeoutMs);
 
