@@ -456,8 +456,13 @@
     });
   }
 
+  /**
+   * Envia o prompt ao Gemini. Valida payload.prompt como string.
+   * Limite de tamanho do prompt: não aplicado aqui; a UI do Gemini pode impor limite próprio.
+   */
   async function handleSendPrompt(payload) {
-    const prompt = payload?.prompt ?? "";
+    const raw = payload != null && typeof payload === "object" ? payload.prompt : undefined;
+    const prompt = typeof raw === "string" ? raw : "";
     if (!prompt.trim()) {
       sendToBackground("EVA_ERROR", { message: "Prompt vazio." });
       return;

@@ -10,6 +10,10 @@ import { blocksToFiles, parseCodeBlocksFromMarkdown, parseSingleFileWithFilePref
  *   { type: 'EVA_STUDIO_TO_PAGE', payload: { type: 'EVA_CODE_RETURNED', payload: { files?, code?, filename?, language?, error? } } }
  * - error presente: aba do AI Studio fechada, extensão não instalada ou outro erro.
  * - Sem error: code/filename ou files (múltiplos arquivos); blocks opcional.
+ *
+ * Origens aceitas para postMessage (EVA_STUDIO_TO_PAGE): window.location.origin ou whitelist de dev
+ * (localhost:3000, localhost:3001, 127.0.0.1:3000, 127.0.0.1:3001). Ver docs/seguranca-extensao.md.
+ * Sanitização (path + conteúdo) é aplicada na IDE em lib/sanitize e hooks ao gravar arquivos.
  */
 
 export type ExtensionMessageType = "CODE_RESPONSE" | "ERROR";
@@ -43,8 +47,21 @@ export type ExtensionMessageHandler = (
  * O chamador deve garantir que a tarefa é a próxima na sequência do checklist (getFirstPendingTaskLine)
  * e que não está reenviando a mesma tarefa (trava canSendTask/recordLastSentTask) antes de chamar esta função.
  */
+/** Origens permitidas para postMessage da extensão (dev: localhost/127.0.0.1 portas 3000 e 3001). */
+const ALLOWED_ORIGINS = [
+  "http://localhost:3000",
+  "http://localhost:3001",
+  "http://127.0.0.1:3000",
+  "http://127.0.0.1:3001",
+];
+
+function isAllowedOrigin(origin: string): boolean {
+  return origin === (typeof window !== "undefined" ? window.location.origin : "") || ALLOWED_ORIGINS.includes(origin);
+}
+
 export function sendPromptToExtension(prompt: string): void {
   if (typeof window === "undefined") return;
+  // Não logar o conteúdo do prompt; apenas metadados (segurança).
   console.log("[IDE -> EXT] Enviando prompt...", { promptLength: prompt?.length ?? 0 });
   window.postMessage(
     {
@@ -74,11 +91,13 @@ export function onExtensionMessage(
       handler("CODE_RESPONSE", { _connected: true } as ExtensionMessagePayload);
       return;
     }
-    // Validação de origem: ignorar mensagens de outros origins (segurança).
-    if (typeof window !== "undefined" && event.origin !== window.location.origin) return;
-    if (data?.type !== "EVA_STUDIO_TO_PAGE" || !data.payload) return;
-
-    const { type, payload } = data.payload as {
+    // Validação de origem: apenas origens permitidas (dev: localhost/127.0.0.1:3000|3001).
+    if (typeof window !== "undefined" && !isAllowedOrigin(event.origin)) return;
+    if (data?.type !== "EVA_STUDIO_TO_PAGE") return;
+    const rawPayload = data.payload;
+    if (rawPayload == null || typeof rawPayload !== "object") return;
+    if (!("type" in rawPayload)) return;
+    const { type, payload } = rawPayload as {
       type: string;
       payload: ExtensionMessagePayload & Record<string, unknown>;
     };

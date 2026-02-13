@@ -62,14 +62,15 @@ function sendCodeReturnedToIde(payload) {
 // Mensagens da IDE (content-ide.js)
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.source !== "eva-content-ide") return false;
-  const { type, payload } = message;
+  const type = message.type;
+  const payload = message.payload != null && typeof message.payload === "object" ? message.payload : undefined;
 
   if (type === "REGISTER_IDE_TAB") {
     console.log("[EVA Bridge] Aba da IDE registrada:", sender.tab?.id);
     setIdeTabId(sender.tab?.id)
       .then(() => sendResponse({ ok: true }))
       .catch((err) => {
-        console.warn("[EVA Bridge] Falha ao registrar aba IDE:", err?.message);
+        console.warn("[EVA Bridge] Falha ao registrar aba IDE. tabId:", sender.tab?.id, "err:", err?.message);
         try { sendResponse({ ok: false }); } catch (_) {}
       });
     return true;
@@ -148,7 +149,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           safeSendResponse({ ok: false });
         }
       } catch (err) {
-        console.warn("[EVA Bridge] Falha ao enviar ao Gemini:", err?.message || err);
+        console.warn("[EVA Bridge] Falha ao enviar ao Gemini. type:EVA_PROMPT_SEND tabId:", tabIdToUse, "err:", err?.message || err);
         try {
           const retryTabId = await findValidGeminiTab();
           if (retryTabId && retryTabId !== tabIdToUse) {
@@ -174,28 +175,31 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // Mensagens do Gemini (content-gemini.js)
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.source !== "eva-content-gemini") return false;
-  const { type, payload } = message;
+  const type = message.type;
+  const payload = message.payload != null && typeof message.payload === "object" ? message.payload : undefined;
 
   if (type === "REGISTER_GEMINI_TAB") {
     console.log("[EVA Bridge] Aba do Gemini registrada:", sender.tab?.id);
     setGeminiTabId(sender.tab?.id)
       .then(() => sendResponse({ ok: true }))
       .catch((err) => {
-        console.warn("[EVA Bridge] Falha ao registrar aba Gemini:", err?.message);
+        console.warn("[EVA Bridge] Falha ao registrar aba Gemini. tabId:", sender.tab?.id, "err:", err?.message);
         try { sendResponse({ ok: false }); } catch (_) {}
       });
     return true;
   }
 
   if (type === "EVA_CODE_CAPTURED") {
+    const safePayload = payload ?? {};
     console.log("[EVA Bridge] EVA_CODE_CAPTURED recebido do Gemini, repassando à IDE.");
-    sendCodeReturnedToIde(payload ?? {});
+    sendCodeReturnedToIde(safePayload);
     sendResponse({ ok: true });
     return true;
   }
 
   if (type === "EVA_ERROR") {
-    sendCodeReturnedToIde({ error: payload?.message ?? "Erro no Gemini." });
+    const msg = payload && typeof payload.message === "string" ? payload.message : "Erro no Gemini.";
+    sendCodeReturnedToIde({ error: msg });
     sendResponse({ ok: true });
     return true;
   }

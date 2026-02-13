@@ -16,6 +16,7 @@
  *     type: 'EVA_STUDIO_FROM_PAGE',
  *     payload: { type: 'EVA_PROMPT_SEND', prompt: string }
  *   }, '*');
+ * EVA_EXTENSION_CONNECTED usa '*' no targetOrigin (handshake inicial; origem da página ainda é a mesma da IDE).
  *
  * Extensão -> Página (código capturado ou erro):
  *   window.postMessage({
@@ -41,6 +42,7 @@
     });
   }
 
+  /** Notifica a página (apenas dados serializáveis: objeto plano, sem referências ao contexto da extensão). */
   function notifyPage(type, payload) {
     try {
       window.postMessage(
@@ -70,9 +72,13 @@
   window.addEventListener("message", (event) => {
     if (event.source !== window || !event.data) return;
     const data = event.data;
-    if (data.type !== "EVA_STUDIO_FROM_PAGE" || !data.payload) return;
+    if (data.type !== "EVA_STUDIO_FROM_PAGE") return;
+    const payload = data.payload;
+    if (payload == null || typeof payload !== "object") return;
+    const type = payload.type;
+    if (type !== "EVA_PING" && type !== "EVA_PROMPT_SEND") return;
 
-    const { type, prompt } = data.payload;
+    const prompt = payload.prompt;
 
     if (type === "EVA_PING") {
       console.log("[CONTENT-IDE] Recebi EVA_PING, respondendo EVA_PONG.");
@@ -81,8 +87,9 @@
     }
 
     if (type === "EVA_PROMPT_SEND") {
-      console.log("[CONTENT-IDE] Recebi postMessage, repassando para background. promptLength:", (prompt ?? "").length);
-      sendToBackground("EVA_PROMPT_SEND", { prompt: prompt ?? "" });
+      const promptStr = typeof prompt === "string" ? prompt : "";
+      console.log("[CONTENT-IDE] Recebi postMessage, repassando para background. promptLength:", promptStr.length);
+      sendToBackground("EVA_PROMPT_SEND", { prompt: promptStr });
     }
   });
 
