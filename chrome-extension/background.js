@@ -105,29 +105,32 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return true;
       } catch (err) {
         if (!isReceivingEndError(err)) throw err;
-        console.log("[EVA Bridge] Content script ausente, injetando programaticamente...");
-        const injectTargets = [{ tabId }, { tabId, allFrames: true }];
-        for (let i = 0; i < injectTargets.length; i++) {
-          const target = injectTargets[i];
-          try {
-            await chrome.scripting.executeScript({
-              target,
-              files: ["content-gemini.js"],
-            });
-            for (const delayMs of [600, 1200, 2200]) {
-              await new Promise((r) => setTimeout(r, delayMs));
+            console.log("[EVA Bridge] Content script ausente, injetando programaticamente...");
+            const injectTargets = [{ tabId }, { tabId, allFrames: true }];
+            const RETRY_DELAYS_MS = [500, 1000, 2000];
+            const MAX_INJECT_ATTEMPTS = 3;
+            for (let i = 0; i < injectTargets.length; i++) {
+              const target = injectTargets[i];
               try {
-                await trySend(tabId);
-                return true;
-              } catch (retryErr) {
-                if (!isReceivingEndError(retryErr)) throw retryErr;
+                await chrome.scripting.executeScript({
+                  target,
+                  files: ["content-gemini.js"],
+                });
+                for (let attempt = 0; attempt < MAX_INJECT_ATTEMPTS; attempt++) {
+                  const delayMs = RETRY_DELAYS_MS[attempt] ?? 2000;
+                  await new Promise((r) => setTimeout(r, delayMs));
+                  try {
+                    await trySend(tabId);
+                    return true;
+                  } catch (retryErr) {
+                    if (!isReceivingEndError(retryErr)) throw retryErr;
+                  }
+                }
+              } catch (injectErr) {
+                console.warn("[EVA Bridge] Injeção falhou (tentativa " + (i + 1) + "):", injectErr?.message || injectErr);
               }
             }
-          } catch (injectErr) {
-            console.warn("[EVA Bridge] Injeção falhou (tentativa " + (i + 1) + "):", injectErr?.message || injectErr);
-          }
-        }
-        return false;
+            return false;
       }
     };
     (async () => {

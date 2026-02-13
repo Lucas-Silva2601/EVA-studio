@@ -100,7 +100,7 @@
   console.log("[EVA-Gemini] Script injetado; registrando aba.");
   registerTab();
 
-  /* Re-registro periódico e ao voltar à aba — evita tab ID obsoleto (storage limpo, extensão reiniciada). */
+  /* Re-registro periódico (45s) e ao voltar à aba — evita tab ID obsoleto; 45s é suficiente sem sobrecarga. */
   const REGISTER_INTERVAL_MS = 45000;
   registerInterval = setInterval(registerTab, REGISTER_INTERVAL_MS);
   document.addEventListener("visibilitychange", () => {
@@ -373,13 +373,14 @@
     return blocks;
   }
 
+  /* Poll 200ms; debounce 350ms após Stop sumir, 250ms após Share; timeout de captura 90s. Evita captura prematura e espera excessiva. */
   const DEBOUNCE_AFTER_STOP_MS = 350;
   const DEBOUNCE_AFTER_SHARE_MS = 250;
   const CAPTURE_TIMEOUT_MS = 90000;
   const POLL_INTERVAL_MS = 200;
 
   /* ---------- (4) Captura de resposta (waitForResponseComplete) ---------- */
-  /** Aguarda fim da resposta: Stop sumir (streaming acabou) OU Share aparecer; debounce evita captura prematura. */
+  /** Aguarda fim da resposta: Stop sumir (streaming acabou) OU Share aparecer; debounce evita captura prematura. MutationObserver e interval são desconectados em captureAndResolve e no timeout (sem vazamento). */
   function waitForResponseComplete() {
     return new Promise((resolve) => {
       let debounceTimer = null;

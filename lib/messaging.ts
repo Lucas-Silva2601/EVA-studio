@@ -107,7 +107,7 @@ export function onExtensionMessage(
     }
     if (type === "EVA_CODE_RETURNED") {
       const p = payload as CodeResponsePayload & { error?: string };
-      if (p?.error) handler("ERROR", { message: p.error });
+      if (p?.error) handler("ERROR", { message: normalizeExtensionErrorMessage(p.error) });
       else handler("CODE_RESPONSE", p ?? {});
     } else if (type === "CODE_RESPONSE" || type === "ERROR") {
       handler(type as ExtensionMessageType, payload as ExtensionMessagePayload);
@@ -118,7 +118,26 @@ export function onExtensionMessage(
   return () => window.removeEventListener("message", listener);
 }
 
+/** Timeouts e handshake (docs: ver docs/performance-ux-extensao.md). */
 const PING_TIMEOUT_MS = 10000;
+const EXTENSION_HANDSHAKE_MS = 10000;
+const DEFAULT_WAIT_FOR_CODE_TIMEOUT_MS = 120000;
+const RECONNECT_PING_ATTEMPTS = 2;
+
+/**
+ * Converte mensagens de erro técnicas da extensão/Chrome para texto em português com ação sugerida.
+ */
+function normalizeExtensionErrorMessage(raw: string): string {
+  if (!raw || typeof raw !== "string") return "Erro desconhecido da extensão.";
+  const lower = raw.toLowerCase();
+  if (lower.includes("receiving end") || lower.includes("could not establish connection") || lower.includes("não foi possível estabelecer")) {
+    return "Conexão com a extensão falhou. Recarregue a aba do Gemini (F5) e verifique se a EVA Studio Bridge está instalada.";
+  }
+  if (lower.includes("timeout")) {
+    return "Tempo esgotado. Verifique se a extensão está instalada, abra gemini.google.com em uma aba e tente novamente.";
+  }
+  return raw;
+}
 
 /**
  * Envia EVA_PING para a extensão. Se o content script estiver na página, responde EVA_PONG.
@@ -155,9 +174,6 @@ export function pingExtension(): Promise<boolean> {
   });
 }
 
-/** Número de tentativas de reconexão (Ping) antes de dar erro no Output. */
-const RECONNECT_PING_ATTEMPTS = 2;
-
 /**
  * Verifica se a extensão está conectada; se não, tenta reconexão automática (até RECONNECT_PING_ATTEMPTS Pings).
  * Só chama onExtensionNotDetected após esgotar as tentativas.
@@ -191,17 +207,13 @@ export interface WaitForCodeError {
 
 export { FILENAME_ASK_GROQ } from "@/lib/normalizeExtensionPayload";
 
-const EXTENSION_HANDSHAKE_MS = 10000;
-
 /**
  * Envia o prompt à extensão e aguarda CODE_RESPONSE ou ERROR até o timeout.
- * Timeout em ms (padrão 120000 = 2 min).
- * Handshake: 10s sem resposta dispara tentativa de reconexão (Ping); só chama onExtensionNotDetected após falha.
- * Fase 10: retorna files[] quando há múltiplos arquivos; senão code/filename (retrocompat).
+ * Timeout padrão: DEFAULT_WAIT_FOR_CODE_TIMEOUT_MS (2 min). Handshake: EXTENSION_HANDSHAKE_MS (10s) sem resposta dispara Ping; onExtensionNotDetected só após RECONNECT_PING_ATTEMPTS falhas.
  */
 export function waitForCodeFromExtension(
   prompt: string,
-  timeoutMs = 120000,
+  timeoutMs = DEFAULT_WAIT_FOR_CODE_TIMEOUT_MS,
   onExtensionNotDetected?: () => void
 ): Promise<WaitForCodeResult | WaitForCodeError> {
   return new Promise((resolve) => {
@@ -226,7 +238,10 @@ export function waitForCodeFromExtension(
       clearTimeout(handshakeTimer);
       unsubscribe();
       console.warn("[messaging] waitForCodeFromExtension timeout", { timeoutMs });
-      resolve({ ok: false, error: `Timeout: extensão não respondeu em ${timeoutMs / 1000}s. Verifique se a extensão está instalada e a página de destino aberta.` });
+      resolve({
+        ok: false,
+        error: `Tempo esgotado (${timeoutMs / 1000}s). Instale a EVA Studio Bridge, abra gemini.google.com em uma aba e recarregue a página do Gemini (F5) se necessário.`,
+      });
     }, timeoutMs);
 
     const unsubscribe = onExtensionMessage((type, payload) => {
@@ -248,7 +263,8 @@ export function waitForCodeFromExtension(
         });
       } else {
         const p = payload as ErrorPayload;
-        resolve({ ok: false, error: p.message ?? "Erro desconhecido da extensão." });
+        const rawError = p.message ?? "Erro desconhecido da extensão.";
+        resolve({ ok: false, error: normalizeExtensionErrorMessage(rawError) });
       }
     });
 

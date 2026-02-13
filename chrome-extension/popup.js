@@ -1,5 +1,6 @@
 /**
  * EVA Bridge v3.0 - Popup: status de conexão IDE (localhost) e aba Gemini.
+ * Apenas um refresh ao abrir; sem setInterval (popup pode fechar a qualquer momento).
  */
 (function () {
   const STORAGE_KEYS = { IDE_TAB_ID: "eva_ide_tab_id", GEMINI_TAB_ID: "eva_gemini_tab_id" };
