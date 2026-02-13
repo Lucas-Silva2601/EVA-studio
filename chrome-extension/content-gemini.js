@@ -15,9 +15,41 @@
   "use strict";
 
   const SOURCE = "eva-content-gemini";
+  let contextInvalidated = false;
+  let registerInterval = null;
+
+  function isContextInvalidatedError(err) {
+    const msg = (err && err.message) ? String(err.message) : "";
+    return /context invalidated|Extension context invalidated/i.test(msg);
+  }
+
+  function showReloadBanner() {
+    if (document.getElementById("eva-studio-invalidated-banner")) return;
+    const banner = document.createElement("div");
+    banner.id = "eva-studio-invalidated-banner";
+    banner.style.cssText = "position:fixed;top:12px;right:12px;z-index:2147483647;background:#1a1a2e;color:#ff6b6b;padding:10px 14px;border-radius:8px;font-family:system-ui,sans-serif;font-size:13px;box-shadow:0 4px 12px rgba(0,0,0,.4);max-width:320px;";
+    banner.textContent = "EVA Studio Bridge: a extensão foi atualizada. Recarregue esta página (F5) para reconectar.";
+    document.body.appendChild(banner);
+  }
+
+  function handleContextInvalidated() {
+    if (contextInvalidated) return;
+    contextInvalidated = true;
+    if (registerInterval) clearInterval(registerInterval);
+    registerInterval = null;
+    console.warn("[EVA-Gemini] Contexto da extensão invalidado. Recarregue a página do Gemini (F5) para reconectar.");
+    showReloadBanner();
+  }
 
   function sendToBackground(type, payload) {
-    chrome.runtime.sendMessage({ source: SOURCE, type, payload }).catch(() => {});
+    if (contextInvalidated) return;
+    try {
+      chrome.runtime.sendMessage({ source: SOURCE, type, payload }).catch(function (err) {
+        if (isContextInvalidatedError(err)) handleContextInvalidated();
+      });
+    } catch (e) {
+      if (isContextInvalidatedError(e)) handleContextInvalidated();
+    }
   }
 
   function registerTab() {
@@ -29,7 +61,7 @@
 
   /* Re-registro periódico e ao voltar à aba — evita tab ID obsoleto (storage limpo, extensão reiniciada). */
   const REGISTER_INTERVAL_MS = 45000;
-  const registerInterval = setInterval(registerTab, REGISTER_INTERVAL_MS);
+  registerInterval = setInterval(registerTab, REGISTER_INTERVAL_MS);
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") registerTab();
   });
@@ -341,14 +373,14 @@
     return blocks;
   }
 
-  const DEBOUNCE_STOP_MS = 2500;
-  const DEBOUNCE_SHARE_MS = 1500;
+  const DEBOUNCE_AFTER_STOP_MS = 350;
+  const DEBOUNCE_AFTER_SHARE_MS = 250;
   const CAPTURE_TIMEOUT_MS = 90000;
-  const POLL_INTERVAL_MS = 500;
+  const POLL_INTERVAL_MS = 200;
 
   /**
    * Aguarda fim da resposta: Stop sumir (streaming acabou) OU Share aparecer.
-   * Não exige Share; assim que Stop some e tivermos blocos (ou após debounce), captura.
+   * Otimizado: poll mais rápido, debounce mínimo, e retry ativo quando Stop já sumiu mas blocos ainda não apareceram no DOM.
    */
   function waitForResponseComplete() {
     return new Promise((resolve) => {
@@ -371,6 +403,12 @@
         resolve(blocks);
       }
 
+      function scheduleCapture(delayMs) {
+        if (resolved) return;
+        if (debounceTimer) clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(captureAndResolve, delayMs);
+      }
+
       function checkAndCapture() {
         if (resolved) return;
         const stopNow = isStopVisible();
@@ -383,18 +421,14 @@
           return;
         }
 
-        if (lastStopVisible || shareNow) {
-          const blocks = extractCodeBlocks();
-          if (blocks.length > 0) {
-            if (debounceTimer) clearTimeout(debounceTimer);
-            debounceTimer = setTimeout(captureAndResolve, shareNow ? DEBOUNCE_SHARE_MS : DEBOUNCE_STOP_MS);
-            return;
-          }
+        if (shareNow) {
+          scheduleCapture(DEBOUNCE_AFTER_SHARE_MS);
+          return;
         }
 
-        if (shareNow) {
-          if (debounceTimer) clearTimeout(debounceTimer);
-          debounceTimer = setTimeout(captureAndResolve, DEBOUNCE_SHARE_MS);
+        if (lastStopVisible) {
+          const blocks = extractCodeBlocks();
+          if (blocks.length > 0) scheduleCapture(DEBOUNCE_AFTER_STOP_MS);
         }
       }
 

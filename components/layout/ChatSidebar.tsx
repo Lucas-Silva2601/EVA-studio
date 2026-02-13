@@ -15,6 +15,7 @@ import {
   extractPromptFromAssistantMessage,
   isProjectCreationRequest,
 } from "@/lib/geminiPrompt";
+import { ensureChecklistItemsUnchecked } from "@/lib/checklistPhase";
 
 export type ChatMessage = {
   role: "user" | "assistant";
@@ -109,17 +110,43 @@ export function ChatSidebar() {
           setLoadingGemini(false);
           return;
         }
-        const toPropose = validFiles.map((f) => ({ filePath: f.name, proposedContent: f.content }));
-        proposeChangesFromChat(toPropose, { phaseLines: phaseLines ?? (task ? [task.taskLine] : undefined) });
-        const fileList = validFiles.map((f) => f.name).join(", ");
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: "assistant",
-            content: `**O Gemini concluiu a tarefa e gerou os arquivos:** ${fileList}. Revise as alterações no diff e aceite para salvar no projeto.`,
-          },
-        ]);
-        addOutputMessage({ type: "success", text: `Código recebido do Gemini (${validFiles.length} arquivo(s)). Revise o diff.` });
+        const isChecklistPhaseFile = (path: string) => /^docs\/fase-\d+\.md$/i.test(path.replace(/\\/g, "/"));
+        const normalizedFiles = validFiles.map((f) => {
+          const pathNorm = f.name.replace(/\\/g, "/");
+          const content = isChecklistPhaseFile(pathNorm) ? ensureChecklistItemsUnchecked(f.content) : f.content;
+          return { filePath: pathNorm, proposedContent: content };
+        });
+        const allChecklistPhases = normalizedFiles.length > 0 && normalizedFiles.every((f) => isChecklistPhaseFile(f.filePath));
+        if (allChecklistPhases) {
+          for (const f of normalizedFiles) {
+            try {
+              await createFileWithContent(f.filePath, f.proposedContent);
+            } catch (err) {
+              addOutputMessage({ type: "error", text: `Erro ao salvar ${f.filePath}: ${(err as Error).message}` });
+            }
+          }
+          const fileList = normalizedFiles.map((f) => f.filePath).join(", ");
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: "assistant",
+              content: `**Checklist em fases criado automaticamente:** ${fileList}. Os arquivos já estão no projeto em **docs/**.`,
+            },
+          ]);
+          addOutputMessage({ type: "success", text: `Checklist inserido no projeto (${normalizedFiles.length} arquivo(s) em docs/).` });
+          refreshFileTree().then(() => getChecklistProgress().then(setProgress));
+        } else {
+          proposeChangesFromChat(normalizedFiles, { phaseLines: phaseLines ?? (task ? [task.taskLine] : undefined) });
+          const fileList = validFiles.map((f) => f.name).join(", ");
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: "assistant",
+              content: `**O Gemini concluiu a tarefa e gerou os arquivos:** ${fileList}. Revise as alterações no diff e aceite para salvar no projeto.`,
+            },
+          ]);
+          addOutputMessage({ type: "success", text: `Código recebido do Gemini (${validFiles.length} arquivo(s)). Revise o diff.` });
+        }
       } catch (err) {
         addOutputMessage({ type: "error", text: `Erro ao enviar/receber do Gemini: ${(err as Error).message}` });
       } finally {
@@ -131,6 +158,9 @@ export function ChatSidebar() {
       addOutputMessage,
       setCurrentChecklistTask,
       proposeChangesFromChat,
+      createFileWithContent,
+      refreshFileTree,
+      getChecklistProgress,
     ]
   );
 
@@ -366,7 +396,14 @@ export function ChatSidebar() {
       if (promptForGemini) {
         sendTaskToGemini(promptForGemini);
       } else if (isFirstCommand && wantsProjectCreation) {
-        sendTaskToGemini(buildProjectPlanPrompt(userMsg.content));
+        if (!directoryHandle) {
+          addOutputMessage({
+            type: "warning",
+            text: "Abra uma pasta do projeto (Abrir pasta) antes de criar o plano em fases. O checklist será salvo em docs/fase-1.md, docs/fase-2.md, etc.",
+          });
+        } else {
+          sendTaskToGemini(buildProjectPlanPrompt(userMsg.content));
+        }
       } else {
         sendNextTaskToGeminiIfAny();
       }

@@ -31,30 +31,29 @@ ${userRequest.trim()}
 
 Sua tarefa é elaborar um CHECKLIST do projeto dividido em FASES. Cada fase deve ser um arquivo .md dentro da pasta **docs/**.
 
-Regras obrigatórias:
-1. Todos os arquivos .md devem ficar DENTRO da pasta docs/. Use sempre o caminho docs/NomeDoArquivo.md.
-2. Crie um arquivo .md para cada fase do checklist (docs/Fase1.md, docs/Fase2.md, docs/Fase3.md, etc.).
-3. Em cada bloco de código, use FILE: na primeira linha com o caminho completo, por exemplo: FILE: docs/Fase1.md
-4. O conteúdo de cada .md deve ser um checklist com:
+Regras obrigatórias (IMPORTANTE — a IDE só reconhece estes nomes):
+1. Todos os arquivos .md devem ficar na pasta docs/ com o nome exato: **docs/fase-1.md**, **docs/fase-2.md**, **docs/fase-3.md**, etc. (minúsculo, hífen antes do número).
+2. Em cada bloco de código, use FILE: na primeira linha com o caminho exato, por exemplo: FILE: docs/fase-1.md
+3. O conteúdo de cada .md deve ser um checklist com:
    - Título da fase (ex.: # Fase 1 – Estrutura)
    - Objetivo da fase em 1-2 linhas
-   - Tarefas em formato de checklist: - [ ] Descrição da tarefa
+   - Tarefas SEMPRE DESMARCADAS: use - [ ] (espaço entre colchetes). NUNCA use [x] — todas as tarefas são pendentes.
    - Entregas ou arquivos esperados naquela fase
-5. Organize as fases em ordem lógica (ex.: Fase 1 = estrutura/HTML, Fase 2 = estilos, Fase 3 = interatividade).
-6. Retorne cada fase em um bloco de código separado, com FILE: docs/FaseN.md na primeira linha do bloco.
+4. Organize as fases em ordem lógica (ex.: Fase 1 = estrutura/HTML, Fase 2 = estilos, Fase 3 = interatividade).
+5. Retorne cada fase em um bloco de código separado, com FILE: docs/fase-N.md na primeira linha (N = 1, 2, 3...).
 
 Exemplo:
-FILE: docs/Fase1.md
+FILE: docs/fase-1.md
 # Fase 1 – Estrutura
 Objetivo: definir a estrutura HTML do projeto.
 - [ ] Criar index.html
 - [ ] Definir seções principais
 
-FILE: docs/Fase2.md
+FILE: docs/fase-2.md
 # Fase 2 – Estilos
 ...
 
-Gere agora os arquivos .md do checklist em fases, todos dentro da pasta docs/, para o projeto solicitado.`;
+Gere agora os arquivos .md do checklist em fases. Use exatamente os nomes docs/fase-1.md, docs/fase-2.md, etc. Todas as tarefas devem estar com - [ ] (não use [x]). Seja direto: apenas os arquivos, sem texto extra antes ou depois.`;
 }
 
 /**

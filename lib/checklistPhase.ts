@@ -373,3 +373,11 @@ export function applyAllPhaseCompletions(checklistContent: string): string {
   }
   return content;
 }
+
+/**
+ * Garante que linhas de checklist venham desmarcadas ([ ]).
+ * Converte [x] ou [X] em [ ] em linhas no formato "- [x] ...". Usado ao receber arquivos docs/fase-*.md do Gemini.
+ */
+export function ensureChecklistItemsUnchecked(content: string): string {
+  return content.replace(/^(\s*[-–—−]\s*\[\s*)[xX](\s*\]\s*)/gm, "$1 $2");
+}

@@ -190,7 +190,8 @@ export const CHECKLIST_TEMPLATE = `# Checklist – Projeto
 `;
 
 /**
- * Lista os arquivos docs/fase-N.md existentes, ordenados por N (1, 2, 3...).
+ * Lista os arquivos docs/fase-N.md ou docs/FaseN.md existentes, ordenados por N (1, 2, 3...).
+ * Aceita tanto fase-1.md (com hífen) quanto Fase1.md (sem hífen) para compatibilidade com o Gemini.
  */
 export async function listDocsPhasePaths(
   rootHandle: FileSystemDirectoryHandle
@@ -199,12 +200,17 @@ export async function listDocsPhasePaths(
     const docsHandle = await rootHandle.getDirectoryHandle(DOCS_FOLDER);
     const names: string[] = [];
     for await (const [name] of docsHandle.entries()) {
-      const match = /^fase-(\d+)\.md$/i.exec(name);
-      if (match) names.push(`${DOCS_FOLDER}/fase-${match[1]}.md`);
+      const withHyphen = /^fase-(\d+)\.md$/i.exec(name);
+      const noHyphen = /^fase(\d+)\.md$/i.exec(name);
+      const match = withHyphen ?? noHyphen;
+      if (match) {
+        const num = match[1];
+        names.push(withHyphen ? `${DOCS_FOLDER}/fase-${num}.md` : `${DOCS_FOLDER}/${name}`);
+      }
     }
     names.sort((a, b) => {
-      const na = parseInt(a.replace(/^.*fase-(\d+)\.md$/i, "$1"), 10);
-      const nb = parseInt(b.replace(/^.*fase-(\d+)\.md$/i, "$1"), 10);
+      const na = parseInt(a.replace(/^.*fase-?(\d+)\.md$/i, "$1"), 10);
+      const nb = parseInt(b.replace(/^.*fase-?(\d+)\.md$/i, "$1"), 10);
       return na - nb;
     });
     return names;
