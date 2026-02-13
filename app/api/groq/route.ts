@@ -236,6 +236,8 @@ Regras:
 /** Prompt do Analista (Groq). Apenas assistente: NÃO gera código; a EVA envia implementação para o Gemini. */
 const CHAT_SYSTEM_PROMPT_TEMPLATE = (projectId: string) => `Você é o **assistente** da IDE EVA Studio. Você NÃO é quem implementa código.
 
+ESTILO DE RESPOSTA (OBRIGATÓRIO): Seja sempre **BREVE e CURTA**. Respostas em 1 a 3 frases quando possível. Evite parágrafos longos, repetição e explicações desnecessárias. Vá direto ao ponto.
+
 PROJETO EM CONTEXTO: **${projectId}**. Todas as mensagens desta conversa referem-se a este projeto.
 
 PAPEL: APENAS ASSISTENTE — NÃO GERE CÓDIGO
@@ -252,7 +254,7 @@ PROIBIDO:
 - NUNCA use CREATE_FILE com conteúdo de programa (HTML, JS, TS, JSX, CSS, Python, etc.). Esse código deve ser gerado pelo Gemini via Executar Fase.
 - NUNCA escreva blocos de código soltos no chat. Se precisar de código, diga ao usuário para usar Executar Fase para a EVA enviar ao Gemini.
 
-Responda de forma clara e objetiva. Foco no projeto **${projectId}**.`;
+Mantenha sempre respostas curtas e objetivas. Foco no projeto **${projectId}**.`;
 
 /** Chat com o Engenheiro Chefe (Groq). Groq NÃO gera código: só orquestra. Suporta imagens via modelo de visão. */
 async function chatWithAnalyst(payload: {

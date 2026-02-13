@@ -9,11 +9,18 @@ import { getProjectContext } from "@/lib/contextPacker";
 import { getChatMessages, saveChatMessages } from "@/lib/indexedDB";
 import { ChatCodeBlock } from "@/components/layout/ChatCodeBlock";
 import { waitForCodeFromExtension, FILENAME_ASK_GROQ } from "@/lib/messaging";
-import { buildPromptForGemini, extractPromptFromAssistantMessage } from "@/lib/geminiPrompt";
+import {
+  buildPromptForGemini,
+  buildProjectPlanPrompt,
+  extractPromptFromAssistantMessage,
+  isProjectCreationRequest,
+} from "@/lib/geminiPrompt";
 
 export type ChatMessage = {
   role: "user" | "assistant";
   content: string;
+  /** Imagens anexadas pelo usuário (exibidas no histórico do chat). */
+  images?: ChatInputImage[];
   /** true quando a resposta foi cortada por limite de tokens (finish_reason === 'length' ou bloco de código aberto). */
   isTruncated?: boolean;
   /** true quando a mensagem é sugestão de autocura após erro de execução (botão "Aplicar Autocura"). */
@@ -315,7 +322,11 @@ export function ChatSidebar() {
     if ((!text && imgs.length === 0) || loading) return;
     setInput("");
     setPendingImages([]);
-    const userMsg: ChatMessage = { role: "user", content: text || "[Imagem anexada]" };
+    const userMsg: ChatMessage = {
+      role: "user",
+      content: text || (imgs.length > 0 ? "[Imagem(ns) anexada(s)]" : ""),
+      images: imgs.length > 0 ? imgs : undefined,
+    };
     setMessages((prev) => [...prev, userMsg]);
     setLoading(true);
     const controller = new AbortController();
@@ -350,8 +361,12 @@ export function ChatSidebar() {
       ]);
       executeEvaActions(reply.content);
       const promptForGemini = extractPromptFromAssistantMessage(reply.content);
+      const isFirstCommand = messages.length === 0;
+      const wantsProjectCreation = isProjectCreationRequest(userMsg.content);
       if (promptForGemini) {
         sendTaskToGemini(promptForGemini);
+      } else if (isFirstCommand && wantsProjectCreation) {
+        sendTaskToGemini(buildProjectPlanPrompt(userMsg.content));
       } else {
         sendNextTaskToGeminiIfAny();
       }
@@ -490,7 +505,24 @@ export function ChatSidebar() {
                 {m.role === "user" ? "Você" : "Engenheiro Chefe"}
               </span>
               {m.role === "user" ? (
-                <div className="whitespace-pre-wrap text-ds-text-primary-light dark:text-ds-text-primary">{m.content}</div>
+                <>
+                  {m.content ? (
+                    <div className="whitespace-pre-wrap text-ds-text-primary-light dark:text-ds-text-primary">{m.content}</div>
+                  ) : null}
+                  {m.images && m.images.length > 0 ? (
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {m.images.map((img, idx) => (
+                        <img
+                          key={idx}
+                          src={img.dataUrl}
+                          alt={img.name}
+                          className="max-h-32 max-w-full rounded border border-ds-border-light dark:border-ds-border object-contain bg-ds-bg-secondary-light dark:bg-ds-bg-secondary"
+                          title={img.name}
+                        />
+                      ))}
+                    </div>
+                  ) : null}
+                </>
               ) : (
                 <ChatCodeBlock
                   content={m.content}

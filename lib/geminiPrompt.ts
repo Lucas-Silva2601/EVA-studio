@@ -3,6 +3,60 @@
  * O Groq orquestra; o prompt é enviado à extensão que injeta no site do Gemini.
  */
 
+/** Palavras-chave que indicam pedido de criação de site/projeto/aplicação. */
+const PROJECT_CREATION_KEYWORDS =
+  /criar|fazer|desenvolver|construir|montar|site|página\s*web|aplicação|app|projeto|sistema|landing|portfólio|loja|blog/i;
+
+/**
+ * Detecta se a mensagem do usuário é um pedido para criar um site, app ou projeto
+ * (ex.: "quero criar um site de receitas", "fazer uma landing page").
+ */
+export function isProjectCreationRequest(message: string): boolean {
+  if (!message || typeof message !== "string") return false;
+  const t = message.trim();
+  if (t.length < 5) return false;
+  return PROJECT_CREATION_KEYWORDS.test(t);
+}
+
+/**
+ * Monta o prompt para o Gemini elaborar um checklist do projeto em fases,
+ * onde cada fase é um arquivo .md dentro da pasta docs/ (docs/Fase1.md, docs/Fase2.md, ...).
+ * Usado no primeiro comando de criação (ex.: "quero criar um site de receitas").
+ */
+export function buildProjectPlanPrompt(userRequest: string): string {
+  return `Você é o Programador da IDE EVA Studio. O usuário solicitou a criação de um projeto.
+
+Pedido do usuário:
+${userRequest.trim()}
+
+Sua tarefa é elaborar um CHECKLIST do projeto dividido em FASES. Cada fase deve ser um arquivo .md dentro da pasta **docs/**.
+
+Regras obrigatórias:
+1. Todos os arquivos .md devem ficar DENTRO da pasta docs/. Use sempre o caminho docs/NomeDoArquivo.md.
+2. Crie um arquivo .md para cada fase do checklist (docs/Fase1.md, docs/Fase2.md, docs/Fase3.md, etc.).
+3. Em cada bloco de código, use FILE: na primeira linha com o caminho completo, por exemplo: FILE: docs/Fase1.md
+4. O conteúdo de cada .md deve ser um checklist com:
+   - Título da fase (ex.: # Fase 1 – Estrutura)
+   - Objetivo da fase em 1-2 linhas
+   - Tarefas em formato de checklist: - [ ] Descrição da tarefa
+   - Entregas ou arquivos esperados naquela fase
+5. Organize as fases em ordem lógica (ex.: Fase 1 = estrutura/HTML, Fase 2 = estilos, Fase 3 = interatividade).
+6. Retorne cada fase em um bloco de código separado, com FILE: docs/FaseN.md na primeira linha do bloco.
+
+Exemplo:
+FILE: docs/Fase1.md
+# Fase 1 – Estrutura
+Objetivo: definir a estrutura HTML do projeto.
+- [ ] Criar index.html
+- [ ] Definir seções principais
+
+FILE: docs/Fase2.md
+# Fase 2 – Estilos
+...
+
+Gere agora os arquivos .md do checklist em fases, todos dentro da pasta docs/, para o projeto solicitado.`;
+}
+
 /**
  * Monta o prompt que será enviado ao Gemini para uma tarefa do checklist.
  * A extensão injeta esse texto na caixa do Gemini e dispara o envio.

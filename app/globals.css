@@ -77,9 +77,14 @@ html:not(.dark) {
   /* Bordas */
   --ds-border: #d0d7de;
 
-  /* Accent (verde escuro para contraste no claro) */
-  --ds-accent: #00aa44;
-  --ds-accent-hover: #00c044;
+  /* Accent — vermelho neon (mesmo destaque do tema escuro) */
+  --ds-accent: #FF4D4D;
+  --ds-accent-hover: #FF6B6B;
+  --ds-accent-neon: #FF4D4D;
+  --ds-accent-neon-hover: #FF6B6B;
+
+  /* Glow neon no tema claro */
+  --ds-glow-neon: 0 0 12px rgba(255, 77, 77, 0.25);
 
   /* Texto */
   --ds-text-primary: #24292f;
@@ -90,18 +95,19 @@ html:not(.dark) {
   --ds-text-warning: #9a6700;
   --ds-text-error: #cf222e;
 
-  /* Scrollbars tema claro */
+  /* Scrollbars tema claro (thumb hover em vermelho neon) */
   --ds-scrollbar-track: #eaeef2;
   --ds-scrollbar-thumb: #afb8c1;
-  --ds-scrollbar-thumb-hover: #8b949e;
+  --ds-scrollbar-thumb-hover: #FF4D4D;
 
   /* Input (tema claro) */
   --vscode-input: #ffffff;
 }
 
-/* Títulos de painéis no tema claro (accent verde) */
+/* Títulos de painéis no tema claro (vermelho neon) */
 html:not(.dark) .panel-title {
-  color: var(--ds-accent);
+  color: var(--ds-accent-neon);
+  text-shadow: 0 0 8px rgba(255, 77, 77, 0.2);
 }
 
 /* Classe utilitária para glow neon */
