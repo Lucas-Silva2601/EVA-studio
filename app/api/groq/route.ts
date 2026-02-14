@@ -1,147 +1,142 @@
 import { NextRequest, NextResponse } from "next/server";
 
 /**
- * Rota de API para o Agente Analista (Groq).
- * API Key: GROQ_API_KEY em .env.local (apenas servidor).
- * Groq: llama-3.3-70b-versatile e meta-llama/llama-4-scout (visão).
+ * Rota de API para o Agente Analista.
+ * Usa Ollama local (http://localhost:11434) para economizar tokens.
+ * O Ollama serve como assistente intermediário que formata pedidos com [EVA_ACTION].
+ * O AI Studio (via extensão) executa as tarefas pesadas de geração de código.
  */
 
-const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
-const GROQ_MODEL = "llama-3.3-70b-versatile";
-/** Modelo com visão para análise de imagens (máx. 5 imagens, base64 até 4MB por request). */
-const GROQ_VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct";
+const OLLAMA_URL = process.env.OLLAMA_URL ?? "http://localhost:11434";
+const OLLAMA_CHAT_ENDPOINT = `${OLLAMA_URL}/api/chat`;
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? "llama3.2";
+/** Modelo com visão para análise de imagens (ex.: llava). Se não configurado, imagens são ignoradas. */
+const OLLAMA_VISION_MODEL = process.env.OLLAMA_VISION_MODEL ?? "llava";
 
-/** Mensagem de erro quando a Groq retorna 429 (após todas as tentativas). */
-const GROQ_RATE_LIMIT_MSG =
-  "Limite de taxa da API Groq excedido. Tente novamente em instantes.";
+/** Mensagem amigável quando o Ollama não está rodando. */
+const OLLAMA_OFFLINE_MSG =
+  "O Ollama não está rodando. Inicie-o com: ollama serve (e certifique-se de ter o modelo com ollama pull llama3.2)";
 
-const MAX_RETRIES = 3;
-const RETRY_DELAYS_MS = [1000, 2000, 4000];
+type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
+type ContentPart = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
+type VisionMessage = { role: "system" | "user" | "assistant"; content: string | ContentPart[] };
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-type GroqMessage = { role: "system" | "user" | "assistant"; content: string };
-type GroqContentPart = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
-type GroqVisionMessage = { role: "system" | "user" | "assistant"; content: string | GroqContentPart[] };
-
-interface CallGroqResult {
+interface CallLLMResult {
   content: string;
   finish_reason: string;
 }
 
-/** Chama a Groq e retorna conteúdo + finish_reason. Em 429, faz retry com backoff. */
-async function callGroqWithMeta(messages: GroqMessage[]): Promise<CallGroqResult> {
-  const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) {
-    throw new Error("GROQ_API_KEY não configurada. Defina em .env.local.");
-  }
-
-  const body = JSON.stringify({
-    model: GROQ_MODEL,
-    messages,
-    max_tokens: 2048,
-    temperature: 0.3,
-  });
-
-  let lastError: Error | null = null;
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    const res = await fetch(GROQ_API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body,
-    });
-
-    if (res.ok) {
-      const data = (await res.json()) as {
-        choices?: Array<{ message?: { content?: string }; finish_reason?: string }>;
-      };
-      const choice = data.choices?.[0];
-      const content = choice?.message?.content?.trim() ?? "";
-      const finish_reason = choice?.finish_reason ?? "unknown";
-      return { content, finish_reason };
+/** Converte mensagens Groq-style (incl. content array) para formato Ollama. */
+function toOllamaMessages(messages: VisionMessage[]): Array<{ role: string; content: string; images?: string[] }> {
+  const result: Array<{ role: string; content: string; images?: string[] }> = [];
+  for (const m of messages) {
+    if (typeof m.content === "string") {
+      result.push({ role: m.role, content: m.content });
+      continue;
     }
-
-    const text = await res.text();
-    if (res.status === 429) {
-      lastError = new Error(GROQ_RATE_LIMIT_MSG);
-      if (attempt < MAX_RETRIES) {
-        const retryAfter = res.headers.get("Retry-After");
-        const waitMs = retryAfter
-          ? Math.min(Number(retryAfter) * 1000, 10000)
-          : RETRY_DELAYS_MS[attempt];
-        console.warn(
-          `[api/groq] 429 rate limit (tentativa ${attempt + 1}/${MAX_RETRIES + 1}). Aguardando ${waitMs}ms...`
-        );
-        await delay(waitMs);
-        continue;
+    const parts = m.content as ContentPart[];
+    const texts: string[] = [];
+    const images: string[] = [];
+    for (const p of parts) {
+      if (p.type === "text") texts.push(p.text);
+      else if (p.type === "image_url" && p.image_url?.url?.startsWith("data:")) {
+        const match = p.image_url.url.match(/^data:[^;]+;base64,(.+)$/);
+        if (match) images.push(match[1]);
       }
-      throw lastError;
     }
-    throw new Error(`Groq API: ${res.status} - ${text || res.statusText}`);
+    result.push({ role: m.role, content: texts.join("\n\n").trim() || "Analise a imagem.", images: images.length ? images : undefined });
   }
-
-  throw lastError ?? new Error(GROQ_RATE_LIMIT_MSG);
+  return result;
 }
 
-async function callGroq(messages: GroqMessage[]): Promise<string> {
-  const { content } = await callGroqWithMeta(messages);
+/** Chama o Ollama e retorna conteúdo + finish_reason (done_reason). */
+async function callOllamaWithMeta(
+  messages: ChatMessage[],
+  options?: { model?: string; images?: string[] }
+): Promise<CallLLMResult> {
+  const model = options?.model ?? OLLAMA_MODEL;
+  const ollamaMessages: Array<{ role: string; content: string; images?: string[] }> = messages.map((m) => ({
+    role: m.role,
+    content: m.content,
+  }));
+  if (options?.images?.length) {
+    const lastUserIdx = ollamaMessages.map((m, i) => (m.role === "user" ? i : -1)).filter((i) => i >= 0).pop();
+    if (lastUserIdx != null) {
+      ollamaMessages[lastUserIdx] = {
+        ...ollamaMessages[lastUserIdx],
+        images: options.images.slice(0, 5),
+      };
+    }
+  }
+  const body = { model, messages: ollamaMessages, stream: false };
+
+  try {
+    const res = await fetch(OLLAMA_CHAT_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      if (res.status === 404) {
+        throw new Error(`Modelo "${model}" não encontrado. Execute: ollama pull ${model}`);
+      }
+      throw new Error(`Ollama API: ${res.status} - ${text || res.statusText}`);
+    }
+
+    const data = (await res.json()) as {
+      message?: { content?: string };
+      done_reason?: string;
+    };
+    const content = data.message?.content?.trim() ?? "";
+    const finish_reason = data.done_reason ?? "stop";
+    return { content, finish_reason };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const isConnectionError =
+      msg.includes("ECONNREFUSED") ||
+      msg.includes("fetch failed") ||
+      msg.includes("Failed to fetch") ||
+      msg.includes("net::ERR_CONNECTION_REFUSED") ||
+      msg.includes("connect ECONNREFUSED");
+    if (isConnectionError) throw new Error(OLLAMA_OFFLINE_MSG);
+    if (err instanceof Error) throw err;
+    throw new Error(OLLAMA_OFFLINE_MSG);
+  }
+}
+
+/** Chama o Ollama (wrapper de texto). */
+async function callOllama(messages: ChatMessage[]): Promise<string> {
+  const { content } = await callOllamaWithMeta(messages);
   return content;
 }
 
-/** Chama a Groq com modelo de visão; messages pode ter content como string ou array (text + image_url). */
-async function callGroqVision(messages: GroqVisionMessage[]): Promise<CallGroqResult> {
-  const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) {
-    throw new Error("GROQ_API_KEY não configurada. Defina em .env.local.");
+/** Chama o Ollama com modelo de visão; fallback para texto se falhar. */
+async function callOllamaVision(messages: VisionMessage[]): Promise<CallLLMResult> {
+  const ollamaMsgs = toOllamaMessages(messages);
+  const lastUser = ollamaMsgs.filter((m) => m.role === "user").pop();
+  const images = lastUser?.images ?? [];
+
+  if (images.length > 0) {
+    try {
+      const textOnly: ChatMessage[] = ollamaMsgs.map((m) => ({ role: m.role as "system" | "user" | "assistant", content: m.content }));
+      return await callOllamaWithMeta(textOnly, {
+        model: OLLAMA_VISION_MODEL,
+        images: images.slice(0, 5),
+      });
+    } catch {
+      const lastUserIdx = ollamaMsgs.map((m, i) => (m.role === "user" ? i : -1)).filter((i) => i >= 0).pop();
+      const textOnly: ChatMessage[] = ollamaMsgs.map((m, i) => ({
+        role: m.role as "system" | "user" | "assistant",
+        content: m.content + (i === lastUserIdx && images.length ? ` [Usuário anexou ${images.length} imagem(ns).]` : ""),
+      }));
+      return callOllamaWithMeta(textOnly);
+    }
   }
 
-  const body = JSON.stringify({
-    model: GROQ_VISION_MODEL,
-    messages,
-    max_tokens: 2048,
-    temperature: 0.3,
-  });
-
-  let lastError: Error | null = null;
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    const res = await fetch(GROQ_API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body,
-    });
-
-    if (res.ok) {
-      const data = (await res.json()) as {
-        choices?: Array<{ message?: { content?: string }; finish_reason?: string }>;
-      };
-      const choice = data.choices?.[0];
-      const content = choice?.message?.content?.trim() ?? "";
-      const finish_reason = choice?.finish_reason ?? "unknown";
-      return { content, finish_reason };
-    }
-
-    const text = await res.text();
-    if (res.status === 429) {
-      lastError = new Error(GROQ_RATE_LIMIT_MSG);
-      if (attempt < MAX_RETRIES) {
-        const waitMs = RETRY_DELAYS_MS[attempt];
-        await delay(waitMs);
-        continue;
-      }
-      throw lastError;
-    }
-    throw new Error(`Groq Vision API: ${res.status} - ${text || res.statusText}`);
-  }
-
-  throw lastError ?? new Error(GROQ_RATE_LIMIT_MSG);
+  const textOnly: ChatMessage[] = ollamaMsgs.map((m) => ({ role: m.role as "system" | "user" | "assistant", content: m.content }));
+  return callOllamaWithMeta(textOnly);
 }
 
 /** Verifica se o conteúdo termina com um bloco de código Markdown aberto (sem fechamento). */
@@ -166,14 +161,14 @@ async function analyzeChecklist(
 Sua tarefa: retornar um ARRAY JSON com TODAS e SOMENTE as tarefas PENDENTES (linhas que contêm "[ ]") que pertencem à seção "## Fase ${targetPhase}". Inclua subtarefas e subtópicos que estejam sob essa seção até a próxima "## Fase" ou o fim do documento. Ignore completamente tarefas de outras fases e qualquer linha já marcada com "[x]".
 
 REGRAS OBRIGATÓRIAS:
-- Retorne APENAS um JSON válido: um array de objetos. Sem markdown, sem \\\`\\\`\\\`json, sem texto antes ou depois.
+- Retorne APENAS um JSON válido: um array de objetos. Sem markdown, sem blocos de código, sem texto antes ou depois.
 - Cada objeto: "taskDescription" (texto completo da tarefa, ex.: "- [ ] Criar componente X"), "taskLine" (a linha EXATA e literal do checklist, para a IDE poder marcar [x] depois), "suggestedFile" (string ou null), "suggestedTech" (string ou null).
 - Inclua TODAS as linhas com "[ ]" que estejam na seção ## Fase ${targetPhase}. Ordem: mesma ordem em que aparecem no checklist.
 - Se não houver nenhuma tarefa pendente na fase ${targetPhase}, retorne: []`;
 
     const userPrompt = `Checklist. Retorne um array JSON com TODAS as tarefas pendentes ([ ]) da seção "## Fase ${targetPhase}" (na ordem em que aparecem). Não inclua outras fases.\n\n${checklistContent}`;
 
-    return callGroq([
+    return callOllama([
       { role: "system", content: systemPrompt },
       { role: "user", content: userPrompt },
     ]);
@@ -194,13 +189,13 @@ REGRAS OBRIGATÓRIAS:
 
   const userPrompt = `Checklist atual (conteúdo do arquivo checklist.md). Retorne o JSON da PRIMEIRA tarefa pendente ([ ]) na ordem do documento:\n\n${checklistContent}`;
 
-  return callGroq([
+  return callOllama([
     { role: "system", content: systemPrompt },
     { role: "user", content: userPrompt },
   ]);
 }
 
-/** Fase 12 (Autocura): Analista analisa o erro e retorna texto + sugestão de correção. Groq NÃO gera código. */
+/** Fase 12 (Autocura): Analista analisa o erro e retorna texto + sugestão de correção. A IA NÃO gera código. */
 async function reportErrorToAnalyst(payload: {
   taskDescription?: string | null;
   filePath: string;
@@ -220,35 +215,50 @@ Sua função:
 
 Regras:
 - NÃO retorne blocos de código com // FILE:. Apenas análise em texto + a sugestão de correção.
-- Se for erro de ambiente (ex.: módulo não instalado), explique como corrigir manualmente.`;
+- Se for erro de ambiente (ex.: módulo não instalado), explique como corrigir manualmente.
+- O PROMPT PARA O AI STUDIO deve ser em **linguagem natural** (frases), nunca código, JSON ou formato técnico.`;
 
   let userPrompt = `Arquivo: ${filePath}\nErro: ${errorMessage}${stack ? `\nStack: ${stack.slice(0, 1500)}` : ""}${taskDescription ? `\nTarefa do checklist: ${taskDescription}` : ""}`;
   if (fileContent?.trim()) {
     userPrompt += `\n\n--- Código atual (trecho) ---\n${fileContent.slice(0, 6000)}`;
   }
-  userPrompt += "\n\nRetorne: 1) análise do erro; 2) sugestão em texto; 3) linha PROMPT PARA O GEMINI: [texto].";
+  userPrompt += "\n\nRetorne: 1) análise do erro; 2) sugestão em texto; 3) linha PROMPT PARA O AI STUDIO: [texto em linguagem natural, sem código].";
 
-  return callGroq([
+  return callOllama([
     { role: "system", content: systemPrompt },
     { role: "user", content: userPrompt },
   ]);
 }
 
-/** Prompt do Analista (Groq). Apenas assistente: NÃO gera código; a EVA envia implementação para o Gemini. */
+/** Prompt do Analista (Ollama). Apenas assistente: NÃO gera código; a EVA envia implementação para o AI Studio. */
 const CHAT_SYSTEM_PROMPT_TEMPLATE = (projectId: string) => `Você é o **assistente** da IDE EVA Studio. Você NÃO é quem implementa código.
 
-ESTILO DE RESPOSTA (OBRIGATÓRIO): Seja sempre **BREVE e CURTA**. Respostas em 1 a 3 frases quando possível. Evite parágrafos longos, repetição e explicações desnecessárias. Vá direto ao ponto.
+ESTILO DE RESPOSTA (OBRIGATÓRIO):
+- Seja EXTREMAMENTE BREVE. Responda em no máximo 2 parágrafos curtos.
+- Evite repetições, saudações longas ou explicações óbvias.
+- Se for apenas confirmar uma ação, use uma única frase.
+- O limite de tokens é estrito; respostas longas serão cortadas. Vá direto ao ponto.
+
+MANDATÓRIO: TODO NOVO PROJETO DEVE TER UM CHECKLIST
+- Se o usuário pedir para criar um site, app ou funcionalidade grande, você DEVE propor e criar um checklist primeiro.
+- Não tente implementar tudo de uma vez. Organize em fases: docs/fase-1.md, docs/fase-2.md, etc.
+- Diga ao usuário que você vai criar o plano de execução passo-a-passo para evitar sobrecarga.
 
 PROJETO EM CONTEXTO: **${projectId}**. Todas as mensagens desta conversa referem-se a este projeto.
 
 PAPEL: APENAS ASSISTENTE — NÃO GERE CÓDIGO
-- Quem implementa código é sempre o **Gemini (Programador)**. A **EVA** envia as tarefas ao Gemini quando o usuário usa **Executar Fase**, **Implementar Fase N** ou **+Gemini**.
-- **Implementar Fase N:** quando o usuário pedir "implementar fase 1", "executar fase 2", etc., a IDE **automaticamente** envia ao Gemini **todas** as tarefas pendentes daquela fase em um único prompt. Você só precisa confirmar brevemente (ex.: "Enviando todas as tarefas da Fase N ao Gemini."). Não liste as tarefas; a IDE já faz isso.
-- **Próxima tarefa:** quando o usuário pedir "próxima tarefa" ou "executar" sem mencionar fase, a IDE envia a primeira tarefa pendente do checklist ao Gemini. Você pode confirmar em uma frase.
-- Para pedidos genéricos de site/app/componente: (1) diga que a EVA vai enviar ao Gemini; (2) sugira usar a ação que **traduz a mensagem em tarefas** e adiciona ao checklist; (3) depois usar **Executar Fase** ou **Implementar Fase N**.
+- Quem implementa código é sempre o **AI Studio (Programador)**. A **EVA** envia as tarefas ao AI Studio quando o usuário usa **Executar Fase**, **Implementar Fase N** ou **+AI Studio**.
+- **Implementar Fase N:** quando o usuário pedir "implementar fase 1", "executar fase 2", etc., a IDE **automaticamente** envia ao AI Studio **todas** as tarefas pendentes daquela fase em um único prompt. Você só precisa confirmar brevemente (ex.: "Enviando todas as tarefas da Fase N ao AI Studio."). Não liste as tarefas; a IDE já faz isso.
+- **Próxima tarefa:** quando o usuário pedir "próxima tarefa" ou "executar" sem mencionar fase, a IDE envia a primeira tarefa pendente do checklist ao AI Studio. Você pode confirmar em uma frase.
+- Para pedidos genéricos de site/app/componente: (1) diga que a EVA vai enviar ao AI Studio; (2) sugira usar a ação que **traduz a mensagem em tarefas** e adiciona ao checklist; (3) depois usar **Executar Fase** ou **Implementar Fase N**.
 
-PROMPTS PARA O GEMINI (quando você precisar enviar uma instrução específica):
-- Use o formato exato: **PROMPT PARA O GEMINI:** seguido da instrução em uma linha ou bloco curto, clara e objetiva (ex.: "Criar componente Header em React em src/components/Header.jsx com props title e children."). A IDE extrai esse texto e envia ao site do Gemini. Seja direto: o que implementar, em qual arquivo, com qual tecnologia.
+PROMPTS PARA O AI STUDIO (quando o usuário pedir código, ex.: botão, componente, página):
+- Use o formato exato: **PROMPT PARA O AI STUDIO:** seguido da instrução. A IDE extrai e envia ao AI Studio.
+- OBRIGATÓRIO - SOMENTE TEXTO PURO: O conteúdo após PROMPT PARA O AI STUDIO deve ser exclusivamente linguagem natural (prosa). Descreva o que fazer em frases completas, como se estivesse falando com uma pessoa.
+- PROIBIDO no PROMPT PARA O AI STUDIO: JSON, chaves e aspas de estrutura de dados, EVA_ACTION, blocos de código, markdown com crases, estruturas técnicas. O AI Studio espera apenas instrução em texto simples.
+- Exemplo correto: PROMPT PARA O AI STUDIO: Crie um botão vermelho arredondado em HTML com o texto Clique aqui. Use estilos inline para cor de fundo vermelha e bordas arredondadas.
+- Exemplo errado: colocar JSON ou action RUN_COMMAND dentro do PROMPT PARA O AI STUDIO. NUNCA faça isso.
+- Para citar arquivo ou classe, use texto normal (ex.: no arquivo index.html ou classe btn-vermelho).
 
 O QUE VOCÊ PODE FAZER (assistente):
 - Responder dúvidas, explicar o projeto, sugerir próximos passos, ajudar a organizar o checklist.
@@ -257,12 +267,14 @@ O QUE VOCÊ PODE FAZER (assistente):
 - Pedir remoção/movimentação (com aprovação): [EVA_ACTION] {"action":"DELETE_FILE","path":"..."} ou MOVE_FILE.
 
 PROIBIDO:
-- NUNCA use CREATE_FILE com código (HTML, JS, TS, JSX, CSS, Python, etc.). Esse código é gerado pelo Gemini.
-- NUNCA escreva blocos de código soltos no chat. Use "Executar Fase" / "Implementar Fase N" ou "PROMPT PARA O GEMINI: ...".
+- NUNCA use CREATE_FILE com código (HTML, JS, TS, JSX, CSS, Python, etc.). Esse código é gerado pelo AI Studio.
+- NUNCA escreva blocos de código soltos no chat. Use "Executar Fase" / "Implementar Fase N" ou "PROMPT PARA O AI STUDIO: ...".
+- NUNCA coloque JSON, {"action":...}, [EVA_ACTION] ou qualquer estrutura técnica dentro de "PROMPT PARA O AI STUDIO:". O AI Studio recebe apenas texto puro — se enviar JSON ou código, ele não retorna arquivos válidos.
+- [EVA_ACTION] é APENAS para comandos da IDE (criar arquivo .md, rodar npm). Nunca misture [EVA_ACTION] com PROMPT PARA O AI STUDIO. Quando o usuário pedir código (botão, componente, HTML), use PROMPT PARA O AI STUDIO com prosa.
 
 Mantenha respostas curtas e objetivas. Foco no projeto **${projectId}**.`;
 
-/** Chat com o Engenheiro Chefe (Groq). Groq NÃO gera código: só orquestra. Suporta imagens via modelo de visão. */
+/** Chat com o Engenheiro Chefe (Ollama). A IA NÃO gera código: só orquestra. Suporta imagens via llava. */
 async function chatWithAnalyst(payload: {
   messages: Array<{ role: "user" | "assistant"; content: string }>;
   projectId: string;
@@ -295,14 +307,14 @@ async function chatWithAnalyst(payload: {
 
   if (hasImages && isLastUser && lastMsg) {
     const textWithContext = lastMsg.content + injectedContext;
-    const contentParts: GroqContentPart[] = [{ type: "text", text: textWithContext || "Analise esta(s) imagem(ns)." }];
+    const contentParts: ContentPart[] = [{ type: "text", text: textWithContext || "Analise esta(s) imagem(ns)." }];
     for (const img of images.slice(0, 5)) {
       contentParts.push({
         type: "image_url",
         image_url: { url: `data:${img.mimeType};base64,${img.base64}` },
       });
     }
-    const visionMessages: GroqVisionMessage[] = [
+    const visionMessages: VisionMessage[] = [
       { role: "system", content: systemPrompt },
       ...messages.slice(0, -1).map((m) => ({
         role: m.role as "user" | "assistant",
@@ -310,12 +322,12 @@ async function chatWithAnalyst(payload: {
       })),
       { role: "user", content: contentParts },
     ];
-    const { content, finish_reason } = await callGroqVision(visionMessages);
+    const { content, finish_reason } = await callOllamaVision(visionMessages);
     const is_truncated = finish_reason === "length" || hasOpenCodeBlock(content);
     return { content, is_truncated };
   }
 
-  const userMessages: GroqMessage[] = [
+  const userMessages: ChatMessage[] = [
     { role: "system", content: systemPrompt },
     ...messages.map((m, i) => {
       const content = m.content + (i === messages.length - 1 && m.role === "user" ? injectedContext : "");
@@ -323,7 +335,7 @@ async function chatWithAnalyst(payload: {
     }),
   ];
 
-  const { content, finish_reason } = await callGroqWithMeta(userMessages);
+  const { content, finish_reason } = await callOllamaWithMeta(userMessages);
   const is_truncated =
     finish_reason === "length" || hasOpenCodeBlock(content);
   return { content, is_truncated };
@@ -337,12 +349,12 @@ Regras:
 - Use graph LR (left-right) ou graph TD (top-down). Prefira TD para árvores de pastas.
 - Pastas como nós retangulares; arquivos como nós com texto do nome.
 - Conecte pastas às suas subpastas/arquivos com setas (-->).
-- Exemplo mínimo: graph TD\\n  A[raiz] --> B[pasta1]\\n  A --> C[arquivo.js]
-- Retorne somente o código Mermaid (sem \\\`\\\`\\\`).`;
+- Exemplo mínimo: graph TD, A[raiz] --> B[pasta1], A --> C[arquivo.js]
+- Retorne somente o código Mermaid, sem blocos de código ao redor.`;
 
   const userPrompt = `Gere um diagrama Mermaid que represente esta estrutura de projeto:\n\n${treeText.slice(0, 4000)}`;
 
-  const result = await callGroq([
+  const result = await callOllama([
     { role: "system", content: systemPrompt },
     { role: "user", content: userPrompt },
   ]);
@@ -370,7 +382,7 @@ Regras:
   }
   userPrompt += "\n\nRetorne apenas as novas linhas de checklist a serem adicionadas ao final do arquivo (uma por linha).";
 
-  return callGroq([
+  return callOllama([
     { role: "system", content: systemPrompt },
     { role: "user", content: userPrompt },
   ]);
@@ -387,12 +399,44 @@ Regras:
 
   const userPrompt = `Qual o nome deste arquivo? (trecho do código)\n\n${content.slice(0, 3000)}`;
 
-  const result = await callGroq([
+  const result = await callOllama([
     { role: "system", content: systemPrompt },
     { role: "user", content: userPrompt },
   ]);
   const name = result.trim().replace(/^["']|["']$/g, "").split("\n")[0].trim();
   return name || "index.html";
+}
+
+/** Compara código original vs código melhorado pelo AI Studio. Retorna análise em linguagem natural das mudanças e melhorias. */
+async function compareCodeChanges(payload: {
+  filePath: string;
+  originalContent: string;
+  newContent: string;
+  taskDescription?: string | null;
+}): Promise<string> {
+  const { filePath, originalContent, newContent, taskDescription } = payload;
+  const systemPrompt = `Você é o Analista da IDE EVA Studio. O AI Studio (Programador) melhorou ou alterou um arquivo. Sua função é:
+
+1) Comparar o código ORIGINAL com o código NOVO (vindo do AI Studio).
+2) Analisar o que foi mudado: linhas adicionadas, removidas, alteradas.
+3) Resumir as melhorias propostas pelo AI Studio em linguagem natural, de forma breve e objetiva.
+
+Regras:
+- Responda SEMPRE em linguagem natural (prosa). NUNCA inclua blocos de código, JSON, markdown técnico ou pseudocódigo.
+- Seja direto: liste as principais alterações e o que melhorou (ex.: "O AI Studio adicionou tratamento de erro", "Refatorou o componente para usar hooks").
+- Limite a 3 a 5 frases curtas.
+- Se não houver mudanças significativas ou o arquivo for novo (original vazio), diga brevemente o que o AI Studio criou ou alterou.`;
+
+  let userPrompt = `Arquivo: ${filePath}\n\n--- CÓDIGO ORIGINAL ---\n${originalContent.slice(0, 8000)}\n\n--- CÓDIGO NOVO (do AI Studio) ---\n${newContent.slice(0, 8000)}`;
+  if (taskDescription?.trim()) {
+    userPrompt += `\n\n--- Tarefa do checklist ---\n${taskDescription}`;
+  }
+  userPrompt += "\n\nCompare e resuma em linguagem natural o que foi mudado e as melhorias propostas pelo AI Studio.";
+
+  return callOllama([
+    { role: "system", content: systemPrompt },
+    { role: "user", content: userPrompt },
+  ]);
 }
 
 /** Valida se o arquivo criado/editado atende à tarefa do checklist. Retorno inclui action MARK_COMPLETE para a IDE marcar [x]. */
@@ -415,7 +459,7 @@ Regras:
 
   const userPrompt = `Tarefa do checklist:\n${taskDescription}\n\nArquivo${fileName ? `: ${fileName}` : ""}\nConteúdo:\n${fileContent.slice(0, 8000)}\n\nRetorne o JSON de validação (com action: "MARK_COMPLETE" se aprovado).`;
 
-  return callGroq([
+  return callOllama([
     { role: "system", content: systemPrompt },
     { role: "user", content: userPrompt },
   ]);
@@ -495,7 +539,7 @@ export async function POST(request: NextRequest) {
       }
       case "chat": {
         const p = payload as {
-          provider?: "groq";
+          provider?: "ollama";
           messages?: Array<{ role: "user" | "assistant"; content: string }>;
           projectId?: string | null;
           projectContext?: string | null;
@@ -539,6 +583,21 @@ export async function POST(request: NextRequest) {
         result = await suggestFilename({ content: p?.content ?? "" });
         break;
       }
+      case "compare_code_changes": {
+        const p = payload as {
+          filePath?: string;
+          originalContent?: string;
+          newContent?: string;
+          taskDescription?: string | null;
+        };
+        result = await compareCodeChanges({
+          filePath: p?.filePath ?? "",
+          originalContent: p?.originalContent ?? "",
+          newContent: p?.newContent ?? "",
+          taskDescription: p?.taskDescription ?? null,
+        });
+        break;
+      }
       default:
         return NextResponse.json(
           { error: `Ação desconhecida: ${action}` },
@@ -557,8 +616,7 @@ export async function POST(request: NextRequest) {
     const message = err instanceof Error ? err.message : "Erro ao chamar a IA";
     console.error("[api/groq]", message, err);
     let status = 500;
-    if (message.includes("GROQ_API_KEY não configurada")) status = 503;
-    else if (message.includes("Limite de taxa")) status = 429;
+    if (message.includes("Ollama") && (message.includes("rodando") || message.includes("não encontrado"))) status = 503;
     return NextResponse.json(
       { error: message },
       { status, headers: { "Content-Type": "application/json" } }

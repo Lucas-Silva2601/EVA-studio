@@ -1,39 +1,50 @@
 {
   "manifest_version": 3,
-  "name": "EVA Studio Bridge v3.0",
-  "version": "3.0",
-  "description": "Ponte entre a IDE EVA Studio (localhost) e o Google Gemini (gemini.google.com). Groq orquestra; Gemini atua como Programador.",
+  "name": "EVA Studio Bridge v3.1",
+  "version": "3.1",
+  "description": "Ponte entre a IDE EVA Studio (localhost) e o Google AI Studio (aistudio.google.com). Ollama orquestra; AI Studio atua como Programador.",
   "permissions": [
     "tabs",
     "scripting",
     "storage"
   ],
   "host_permissions": [
-    "http://localhost:3000/*","http://localhost:3001/*",
-    "http://127.0.0.1:3000/*","http://127.0.0.1:3001/*",
-    "https://gemini.google.com/*",
-    "https://www.gemini.google.com/*"
+    "http://localhost:3000/*",
+    "http://localhost:3001/*",
+    "http://127.0.0.1:3000/*",
+    "http://127.0.0.1:3001/*",
+    "https://aistudio.google.com/*",
+    "https://www.aistudio.google.com/*"
   ],
   "background": {
     "service_worker": "background.js"
   },
   "content_scripts": [
     {
-      "matches": ["https://gemini.google.com/*", "https://www.gemini.google.com/*"],
-      "js": ["content-gemini.js"],
+      "matches": [
+        "https://aistudio.google.com/*",
+        "https://www.aistudio.google.com/*"
+      ],
+      "js": [
+        "content-aistudio.js"
+      ],
       "run_at": "document_idle"
     },
     {
       "matches": [
-        "http://localhost:3000/*","http://localhost:3001/*",
-        "http://127.0.0.1:3000/*","http://127.0.0.1:3001/*"
+        "http://localhost:3000/*",
+        "http://localhost:3001/*",
+        "http://127.0.0.1:3000/*",
+        "http://127.0.0.1:3001/*"
       ],
-      "js": ["content-ide.js"],
+      "js": [
+        "content-ide.js"
+      ],
       "run_at": "document_idle"
     }
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "EVA Bridge v3.0 – Status"
+    "default_title": "EVA Bridge v3.1 – Status"
   }
 }

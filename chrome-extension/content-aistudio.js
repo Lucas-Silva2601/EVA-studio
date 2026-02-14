@@ -1,41 +1,41 @@
 /**
- * EVA Studio Bridge v3.0 - Content Script (Google Gemini)
- * Executa em https://gemini.google.com/*
+ * EVA Studio Bridge v3.1 - Content Script (Google AI Studio)
+ * Executa em https://aistudio.google.com/*
  *
  * FUNCIONALIDADE:
- * - Registra esta aba como "aba do Gemini" no background
+ * - Registra esta aba como "aba do AI Studio" no background
  * - Recebe prompt do background (EVA_PROMPT_INJECT), insere no input e envia
- * - MutationObserver: captura resposta quando Stop some ou Share aparecer (debounce evita captura prematura).
+ * - MutationObserver: captura resposta quando Stop sumir ou Share aparecer
  * - Extrai blocos de código e FILE: path/filename; envia EVA_CODE_CAPTURED ao background
  *
  * Protocolo: EVA_PROMPT_SEND (IDE -> Extensão), EVA_CODE_RETURNED (Extensão -> IDE).
- * Seletores: GEMINI_SELECTORS abaixo. Se a UI do Gemini mudar, inspecione a página (F12), atualize os arrays
- * e teste o fluxo (enviar prompt da IDE → código retornar). Ver docs/qa-extensao.md.
- *
- * Arquivo >250 linhas por decisão: extensão sem build step; seções (1) Config (2) DOM (3) Parsing (4) Captura (5) Handlers.
+ * Seletores: AISTUDIO_SELECTORS abaixo. Se a UI mudar, inspecione (F12) e atualize.
  */
 (function () {
   "use strict";
 
-  /* ---------- (1) Config e constantes ---------- */
-  const SOURCE = "eva-content-gemini";
+  const SOURCE = "eva-content-aistudio";
   let contextInvalidated = false;
   let registerInterval = null;
 
-  /** Seletores do DOM do Gemini. Atualize quando a UI do site mudar (inspecione em gemini.google.com). */
-  const GEMINI_SELECTORS = {
+  /** Seletores do DOM do AI Studio (aistudio.google.com). Atualize se a UI mudar. */
+  const AISTUDIO_SELECTORS = {
     prompt: [
-      '[role="combobox"]',
+      'textarea[placeholder*="Start typing a prompt"]',
       'textarea[placeholder*="Enter"]',
       'textarea[placeholder*="Message"]',
       'textarea[placeholder*="Type"]',
+      'textarea[placeholder*="Prompt"]',
       'textarea[aria-label*="prompt"]',
       '[contenteditable="true"][role="textbox"]',
       '[contenteditable="true"]',
       "textarea",
+      '[role="combobox"]',
       'input[type="text"]',
     ],
     sendButton: [
+      'button[aria-label*="Run"]',
+      '[aria-label*="Run"]',
       'button[type="submit"]',
       'button[aria-label*="Send"]',
       'button[aria-label*="Enviar"]',
@@ -48,7 +48,6 @@
       'button[aria-label*="Stop"]',
       'button[aria-label*="Parar"]',
       '[data-icon="stop"]',
-      'button:has(svg[aria-label*="Stop"])',
       '[title*="Stop"]',
     ],
     share: [
@@ -69,7 +68,7 @@
     const banner = document.createElement("div");
     banner.id = "eva-studio-invalidated-banner";
     banner.style.cssText = "position:fixed;top:12px;right:12px;z-index:2147483647;background:#1a1a2e;color:#ff6b6b;padding:10px 14px;border-radius:8px;font-family:system-ui,sans-serif;font-size:13px;box-shadow:0 4px 12px rgba(0,0,0,.4);max-width:320px;";
-    banner.textContent = "EVA Studio Bridge: a extensão foi atualizada. Recarregue esta página (F5) para reconectar.";
+    banner.textContent = "EVA Studio Bridge: extensão atualizada. Recarregue esta página (F5) para reconectar.";
     document.body.appendChild(banner);
   }
 
@@ -78,7 +77,7 @@
     contextInvalidated = true;
     if (registerInterval) clearInterval(registerInterval);
     registerInterval = null;
-    console.warn("[EVA-Gemini] Contexto da extensão invalidado. Recarregue a página do Gemini (F5) para reconectar.");
+    console.warn("[EVA-AIStudio] Contexto invalidado. Recarregue a página (F5).");
     showReloadBanner();
   }
 
@@ -94,20 +93,17 @@
   }
 
   function registerTab() {
-    sendToBackground("REGISTER_GEMINI_TAB", {});
+    sendToBackground("REGISTER_AISTUDIO_TAB", {});
   }
 
-  console.log("[EVA-Gemini] Script injetado; registrando aba.");
+  console.log("[EVA-AIStudio] Script injetado; registrando aba.");
   registerTab();
-
-  /* Re-registro periódico (45s) e ao voltar à aba — evita tab ID obsoleto; 45s é suficiente sem sobrecarga. */
   const REGISTER_INTERVAL_MS = 45000;
   registerInterval = setInterval(registerTab, REGISTER_INTERVAL_MS);
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") registerTab();
   });
 
-  /* ---------- (2) Helpers de DOM e seletores ---------- */
   function findFirstVisible(selectors, checkDisabled) {
     for (const sel of selectors) {
       const el = document.querySelector(sel);
@@ -120,12 +116,21 @@
   }
 
   function findPromptInput() {
-    return findFirstVisible(GEMINI_SELECTORS.prompt, false);
+    return findFirstVisible(AISTUDIO_SELECTORS.prompt, false);
   }
 
   function findSendButton() {
-    const btn = findFirstVisible(GEMINI_SELECTORS.sendButton, true);
+    const btn = findFirstVisible(AISTUDIO_SELECTORS.sendButton, true);
     if (btn) return btn;
+
+    // Tenta encontrar por texto "Run" ou "Enviar"
+    const allButtons = Array.from(document.querySelectorAll('button:not([disabled])'));
+    const runBtn = allButtons.find(b => {
+      const txt = (b.textContent || "").trim().toLowerCase();
+      return txt === "run" || txt === "executar" || txt === "send" || txt === "enviar";
+    });
+    if (runBtn) return runBtn;
+
     const form = document.querySelector("form");
     if (form) {
       const formBtn = form.querySelector("button:not([disabled])");
@@ -135,7 +140,7 @@
   }
 
   function isStopVisible() {
-    for (const sel of GEMINI_SELECTORS.stop) {
+    for (const sel of AISTUDIO_SELECTORS.stop) {
       const el = document.querySelector(sel);
       if (el && el.offsetParent !== null) return true;
     }
@@ -143,7 +148,7 @@
   }
 
   function isShareVisible() {
-    for (const sel of GEMINI_SELECTORS.share) {
+    for (const sel of AISTUDIO_SELECTORS.share) {
       const el = document.querySelector(sel);
       if (el && el.offsetParent !== null) return true;
     }
@@ -182,16 +187,12 @@
     return false;
   }
 
-  /* ---------- (3) Parsing e extração de código ---------- */
   function parseFileFromFirstLine(code) {
     const first = (code || "").split("\n")[0] || "";
     const match = first.match(/(?:FILE|filename)\s*:\s*([^\s\n]+)/i);
     return match ? match[1].trim() : null;
   }
 
-  /**
-   * Busca FILE: em todo o bloco (primeiras 10 linhas) — o Gemini pode colocar em qualquer linha inicial.
-   */
   function parseFileFromContent(code) {
     const lines = (code || "").split("\n");
     for (let i = 0; i < Math.min(lines.length, 10); i++) {
@@ -201,52 +202,29 @@
     return null;
   }
 
-  /**
-   * Infere nome de arquivo com extensão correta a partir do conteúdo (evita file_0.txt).
-   * HTML → index.html; Markdown → checklist.md; etc.
-   */
   function inferFilenameFromContent(code) {
     const trimmed = (code || "").trim();
     if (!trimmed) return null;
     const first = trimmed.slice(0, 400).toLowerCase();
-    if (first.includes("<!doctype") || first.startsWith("<html") || first.startsWith("<!DOCTYPE")) {
-      return "index.html";
-    }
+    if (first.includes("<!doctype") || first.startsWith("<html") || first.startsWith("<!DOCTYPE")) return "index.html";
     const hasBracesAndColon = first.includes("{") && first.includes(":");
-    const hasCssHint = first.includes("<style") || first.includes("px") || first.includes("em") || first.includes("rem") ||
-      /\d\s*%/.test(first) || first.includes("color:") || first.includes("margin:") || first.includes("padding:") ||
-      first.includes("font-size:") || first.includes("width:") || first.includes("height:") ||
-      first.includes("background") || first.includes("border:") || first.includes("display:");
+    const hasCssHint = first.includes("<style") || first.includes("px") || first.includes("em") || first.includes("rem") || /\d\s*%/.test(first) || first.includes("color:") || first.includes("margin:") || first.includes("padding:") || first.includes("font-size:") || first.includes("width:") || first.includes("height:") || first.includes("background") || first.includes("border:") || first.includes("display:");
     const hasJsHint = first.includes("function ") || first.includes("=>") || first.includes("const ") || first.includes("export ");
     if (hasCssHint && (first.includes("<style") || (hasBracesAndColon && !hasJsHint))) return "style.css";
-    if (first.includes("import react") || first.includes('from "react"') || first.includes("from 'react'")) {
-      return "App.jsx";
-    }
-    if (first.includes("function ") || (first.includes("const ") && first.includes("=>")) || first.includes("export ")) {
-      return "script.js";
-    }
-    if (first.includes("getelementbyid") || first.includes("getcontext") || first.includes("queryselector") || first.includes("addeventlistener") || (first.includes("canvas") && first.includes("."))) {
-      return "script.js";
-    }
-    if (first.includes("setinterval") || first.includes("requestanimationframe") || first.includes("addEventListener")) {
-      return "script.js";
-    }
-    if (first.includes("def ") || (first.includes("import ") && !first.includes("react"))) {
-      return "script.py";
-    }
+    if (first.includes("import react") || first.includes('from "react"') || first.includes("from 'react'")) return "App.jsx";
+    if (first.includes("function ") || (first.includes("const ") && first.includes("=>")) || first.includes("export ")) return "script.js";
+    if (first.includes("getelementbyid") || first.includes("getcontext") || first.includes("queryselector") || first.includes("addeventlistener") || (first.includes("canvas") && first.includes("."))) return "script.js";
+    if (first.includes("setinterval") || first.includes("requestanimationframe") || first.includes("addEventListener")) return "script.js";
+    if (first.includes("def ") || (first.includes("import ") && !first.includes("react"))) return "script.py";
     if (first.startsWith("{") || first.startsWith("[")) return "data.json";
-    if (first.startsWith("# ") || first.includes("## ") || first.includes("- [ ]") || first.includes("- [x]")) {
-      return "checklist.md";
-    }
+    if (first.startsWith("# ") || first.includes("## ") || first.includes("- [ ]") || first.includes("- [x]")) return "checklist.md";
     return null;
   }
 
   function stripFileLine(code) {
     const lines = (code || "").split("\n");
     for (let i = 0; i < Math.min(lines.length, 10); i++) {
-      if (/(?:FILE|filename)\s*:\s*/i.test(lines[i] || "")) {
-        return lines.slice(i + 1).join("\n").trimStart();
-      }
+      if (/(?:FILE|filename)\s*:\s*/i.test(lines[i] || "")) return lines.slice(i + 1).join("\n").trimStart();
     }
     return code || "";
   }
@@ -256,17 +234,10 @@
     return map[(lang || "").toLowerCase()] || "";
   }
 
-  /** Mínimo de caracteres para considerar conteúdo como arquivo (evita comandos soltos). */
   const MIN_FILE_CONTENT_LENGTH = 60;
-  /** Uma única linha com menos que isso é tratada como snippet/comando (a menos que tenha FILE:). */
   const MIN_SINGLE_LINE_LENGTH = 100;
-  /** Padrão: linha que parece comando de shell/terminal (não é código de arquivo). */
   const SINGLE_LINE_COMMAND_REGEX = /^(npm |yarn |pnpm |cd |echo |git |python |node |\.\/|npx |curl |wget |mkdir |cp |mv |cat |ls |chmod |exit |clear |deno |bun )\s*/i;
 
-  /**
-   * Retorna true se o conteúdo deve ser ignorado (comando solto, snippet de uma linha, etc.).
-   * Blocos com FILE: docs/fase são sempre aceitos (plano em fases).
-   */
   function isSnippetOrCommand(content) {
     const trimmed = (content || "").trim();
     if (/^FILE:\s*docs[\\/]fase-/im.test(trimmed) || /^FILE:\s*fase-\d+\.md/im.test(trimmed)) return false;
@@ -279,10 +250,6 @@
     return false;
   }
 
-  /**
-   * Converte blocos extraídos em files (name = path, content).
-   * Prioridade: FILE: na primeira linha → FILE: em qualquer linha inicial → inferência do conteúdo → language class → file_N.ext (evita .txt genérico).
-   */
   function blocksToFiles(blocks) {
     return blocks.map(function (block, i) {
       const pathFromFirstLine = parseFileFromFirstLine(block.code);
@@ -295,20 +262,15 @@
     });
   }
 
-  /**
-   * Extrai blocos de código da página. Múltiplas estratégias para compatibilidade com mudanças na UI do Gemini.
-   */
   function extractCodeBlocks() {
     const blocks = [];
     const seen = new Set();
-
     function addBlock(code, language) {
       const key = (code || "").trim().slice(0, 80);
       if (!key || seen.has(key)) return;
       seen.add(key);
       blocks.push({ code: (code || "").trim(), language: language || undefined });
     }
-
     document.querySelectorAll("pre").forEach((pre) => {
       const code = pre.querySelector("code");
       const text = code ? code.textContent : pre.textContent;
@@ -317,14 +279,12 @@
         addBlock(text, lang);
       }
     });
-
     if (blocks.length === 0) {
       document.querySelectorAll("code").forEach((el) => {
         const text = el.textContent?.trim();
         if (text && text.length > 20) addBlock(text, undefined);
       });
     }
-
     if (blocks.length === 0) {
       document.querySelectorAll('[class*="code-block"], [class*="markdown"], [data-code-block]').forEach((el) => {
         const pre = el.querySelector("pre") || el;
@@ -332,18 +292,14 @@
         if (text.length > 20) addBlock(text, undefined);
       });
     }
-
     if (blocks.length === 0) {
-      const allPre = document.querySelectorAll("pre");
-      allPre.forEach((pre) => {
+      document.querySelectorAll("pre").forEach((pre) => {
         const text = (pre.textContent || "").trim();
         if (text.length > 20) addBlock(text, undefined);
       });
     }
-
     if (blocks.length === 0) {
-      const textNodes = document.querySelectorAll("[class*='message'], [class*='response'], [class*='content']");
-      textNodes.forEach((el) => {
+      document.querySelectorAll("[class*='message'], [class*='response'], [class*='content']").forEach((el) => {
         const raw = (el.textContent || "").trim();
         const match = raw.match(/```[\w]*\n([\s\S]*?)```/g);
         if (match) {
@@ -354,8 +310,6 @@
         }
       });
     }
-
-    /* Fallback: resposta em markdown renderizado sem <pre>/<code> — procurar FILE: docs/fase ou FILE: fase-N.md no texto. */
     if (blocks.length === 0) {
       const root = document.querySelector("main") || document.querySelector("[role='main']") || document.body;
       const raw = (root && root.textContent) ? root.textContent : document.body.textContent || "";
@@ -369,18 +323,14 @@
         addBlock(trimmed, "markdown");
       });
     }
-
     return blocks;
   }
 
-  /* Poll 200ms; debounce após Stop sumir (200ms) ou Share (150ms); timeout 90s. Valores reduzidos para menor latência percebida. */
   const DEBOUNCE_AFTER_STOP_MS = 200;
   const DEBOUNCE_AFTER_SHARE_MS = 150;
-  const CAPTURE_TIMEOUT_MS = 90000;
+  const CAPTURE_TIMEOUT_MS = 600000; // 10 minutos (antes 90s)
   const POLL_INTERVAL_MS = 200;
 
-  /* ---------- (4) Captura de resposta (waitForResponseComplete) ---------- */
-  /** Aguarda fim da resposta: Stop sumir (streaming acabou) OU Share aparecer; debounce evita captura prematura. MutationObserver e interval são desconectados em captureAndResolve e no timeout (sem vazamento). */
   function waitForResponseComplete() {
     return new Promise((resolve) => {
       let debounceTimer = null;
@@ -389,7 +339,6 @@
       let resolved = false;
       let observerRef = null;
       let intervalRef = null;
-
       function captureAndResolve() {
         if (resolved) return;
         resolved = true;
@@ -397,51 +346,34 @@
         if (intervalRef) clearInterval(intervalRef);
         clearTimeout(timeoutId);
         if (debounceTimer) clearTimeout(debounceTimer);
-        const blocks = extractCodeBlocks();
-        console.log("[EVA-Gemini] Captura concluída: " + blocks.length + " bloco(s) de código.");
-        resolve(blocks);
+        resolve(extractCodeBlocks());
       }
-
       function scheduleCapture(delayMs) {
         if (resolved) return;
         if (debounceTimer) clearTimeout(debounceTimer);
         debounceTimer = setTimeout(captureAndResolve, delayMs);
       }
-
       function checkAndCapture() {
         if (resolved) return;
         const stopNow = isStopVisible();
         const shareNow = isShareVisible();
-
         if (stopNow) {
           lastStopVisible = true;
           if (debounceTimer) clearTimeout(debounceTimer);
           debounceTimer = null;
           return;
         }
-
         if (shareNow) {
           scheduleCapture(DEBOUNCE_AFTER_SHARE_MS);
           return;
         }
-
         if (lastStopVisible) {
-          const blocks = extractCodeBlocks();
-          if (blocks.length > 0) scheduleCapture(DEBOUNCE_AFTER_STOP_MS);
+          const blks = extractCodeBlocks();
+          if (blks.length > 0) scheduleCapture(DEBOUNCE_AFTER_STOP_MS);
         }
       }
-
-      observerRef = new MutationObserver(() => {
-        checkAndCapture();
-      });
-
-      observerRef.observe(document.body, {
-        childList: true,
-        subtree: true,
-        characterData: true,
-        characterDataOldValue: true,
-      });
-
+      observerRef = new MutationObserver(checkAndCapture);
+      observerRef.observe(document.body, { childList: true, subtree: true, characterData: true, characterDataOldValue: true });
       intervalRef = setInterval(checkAndCapture, POLL_INTERVAL_MS);
       timeoutId = setTimeout(() => {
         if (resolved) return;
@@ -449,65 +381,94 @@
         if (observerRef) observerRef.disconnect();
         if (intervalRef) clearInterval(intervalRef);
         if (debounceTimer) clearTimeout(debounceTimer);
-        console.log("[EVA-Gemini] Timeout de captura; extraindo o que houver.");
         resolve(extractCodeBlocks());
       }, CAPTURE_TIMEOUT_MS);
     });
   }
 
-  /**
-   * Envia o prompt ao Gemini. Valida payload.prompt como string.
-   * Limite de tamanho do prompt: não aplicado aqui; a UI do Gemini pode impor limite próprio.
-   */
-  /* ---------- (5) Handlers de mensagem ---------- */
+  function base64ToBlob(base64, mimeType) {
+    const byteCharacters = atob(base64);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+      byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    return new Blob([byteArray], { type: mimeType });
+  }
+
+  async function pasteImages(input, images) {
+    if (!images || images.length === 0) return;
+    try {
+      const dataTransfer = new DataTransfer();
+      for (const img of images) {
+        const blob = base64ToBlob(img.base64, img.mimeType);
+        const file = new File([blob], "image.png", { type: img.mimeType });
+        dataTransfer.items.add(file);
+      }
+
+      const pasteEvent = new ClipboardEvent("paste", {
+        bubbles: true,
+        cancelable: true,
+        clipboardData: dataTransfer
+      });
+      input.focus();
+      input.dispatchEvent(pasteEvent);
+      // Pequena pausa para o UI processar a imagem colada
+      await new Promise(r => setTimeout(r, 500));
+    } catch (err) {
+      console.error("[EVA-AIStudio] Erro ao colar imagem:", err);
+    }
+  }
+
   async function handleSendPrompt(payload) {
     const raw = payload != null && typeof payload === "object" ? payload.prompt : undefined;
+    const images = payload != null && typeof payload === "object" ? payload.images : undefined;
     const prompt = typeof raw === "string" ? raw : "";
-    if (!prompt.trim()) {
-      sendToBackground("EVA_ERROR", { message: "Prompt vazio." });
+
+    if (!prompt.trim() && (!images || images.length === 0)) {
+      sendToBackground("EVA_ERROR", { message: "Prompt vazio e sem imagens." });
       return;
     }
-
     const input = findPromptInput();
     if (!input) {
-      sendToBackground("EVA_ERROR", { message: "Caixa de prompt do Gemini não encontrada. Atualize os seletores em content-gemini.js." });
+      sendToBackground("EVA_ERROR", { message: "Caixa de prompt do AI Studio não encontrada. Atualize os seletores em content-aistudio.js." });
       return;
     }
 
-    setInputValue(input, prompt);
-    await new Promise((r) => setTimeout(r, 400));
+    // 1. Cola imagens se houver
+    if (images && images.length > 0) {
+      await pasteImages(input, images);
+    }
+
+    // 2. Insere texto
+    if (prompt.trim()) {
+      setInputValue(input, prompt);
+    }
+
+    await new Promise((r) => setTimeout(r, 800)); // Aumentado delay para garantir processamento da imagem
 
     if (!submitPrompt()) {
       sendToBackground("EVA_ERROR", { message: "Botão de envio não encontrado." });
       return;
     }
-
     try {
       const blocks = await waitForResponseComplete();
       if (blocks.length === 0) {
-        console.warn("[EVA-Gemini] Nenhum bloco de código encontrado na página. Enviando resposta vazia à IDE.");
         sendToBackground("EVA_CODE_CAPTURED", { code: "", files: [] });
       } else {
         const allFiles = blocksToFiles(blocks);
         const files = allFiles.filter(function (f) { return !isSnippetOrCommand(f.content); });
         if (files.length === 0) {
-          console.warn("[EVA-Gemini] Blocos extraídos foram filtrados (snippet/comando). Enviando resposta vazia.");
           sendToBackground("EVA_CODE_CAPTURED", { code: "", files: [] });
         } else {
-          console.log("[EVA-Gemini] Enviando " + files.length + " arquivo(s) à IDE: " + files.map(function (f) { return f.name; }).join(", "));
           if (files.length === 1) {
-            sendToBackground("EVA_CODE_CAPTURED", {
-              code: files[0].content,
-              filename: files[0].name,
-              files,
-            });
+            sendToBackground("EVA_CODE_CAPTURED", { code: files[0].content, filename: files[0].name, files });
           } else {
             sendToBackground("EVA_CODE_CAPTURED", { files });
           }
         }
       }
     } catch (e) {
-      console.error("[EVA-Gemini] Erro ao capturar código:", e);
       sendToBackground("EVA_ERROR", { message: e?.message ?? "Erro ao extrair código." });
     }
   }
@@ -517,15 +478,9 @@
     if (message.type !== "EVA_PROMPT_INJECT") return false;
     function safeSendResponse(value) {
       if (contextInvalidated) return;
-      try {
-        sendResponse(value);
-      } catch (e) {
-        if (isContextInvalidatedError(e)) handleContextInvalidated();
-      }
+      try { sendResponse(value); } catch (e) { if (isContextInvalidatedError(e)) handleContextInvalidated(); }
     }
-    handleSendPrompt(message.payload)
-      .then(() => safeSendResponse({ ok: true }))
-      .catch(() => safeSendResponse({ ok: false }));
+    handleSendPrompt(message.payload).then(() => safeSendResponse({ ok: true })).catch(() => safeSendResponse({ ok: false }));
     return true;
   });
 })();

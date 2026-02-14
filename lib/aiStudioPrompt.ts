@@ -1,6 +1,6 @@
 /**
- * Construção e extração de prompts para o Gemini (extensão EVA Bridge).
- * O Groq orquestra; o prompt é enviado à extensão que injeta no site do Gemini.
+ * Construção e extração de prompts para o AI Studio (extensão EVA Bridge).
+ * O Groq orquestra; o prompt é enviado à extensão que injeta no site do AI Studio.
  */
 
 /** Palavras-chave que indicam pedido de criação de site/projeto/aplicação. */
@@ -19,7 +19,7 @@ export function isProjectCreationRequest(message: string): boolean {
 }
 
 /**
- * Monta o prompt para o Gemini elaborar um checklist do projeto em fases,
+ * Monta o prompt para o AI Studio elaborar um checklist do projeto em fases,
  * onde cada fase é um arquivo .md dentro da pasta docs/ (docs/Fase1.md, docs/Fase2.md, ...).
  * Usado no primeiro comando de criação (ex.: "quero criar um site de receitas").
  */
@@ -39,7 +39,8 @@ Regras obrigatórias (IMPORTANTE — a IDE só reconhece estes nomes):
    - Objetivo da fase em 1-2 linhas
    - Tarefas SEMPRE DESMARCADAS: use - [ ] (espaço entre colchetes). NUNCA use [x] — todas as tarefas são pendentes.
    - Entregas ou arquivos esperados naquela fase
-4. Organize as fases em ordem lógica (ex.: Fase 1 = estrutura/HTML, Fase 2 = estilos, Fase 3 = interatividade).
+4. IMPORTANTE: Organize as fases em ordem lógica e incremental (ex.: Fase 1 = estrutura/HTML, Fase 2 = estilos, Fase 3 = interatividade, Fase 4 = Ajustes).
+   - Não tente fazer tudo em uma fase. Divida para conquistar e evitar sobrecarga.
 5. Retorne cada fase em um bloco de código separado, com FILE: docs/fase-N.md na primeira linha (N = 1, 2, 3...).
 
 Exemplo:
@@ -57,10 +58,10 @@ Gere agora os arquivos .md do checklist em fases. Use exatamente os nomes docs/f
 }
 
 /**
- * Monta o prompt que será enviado ao Gemini para uma tarefa do checklist.
- * Estrutura clara para o Gemini: contexto, tarefa única, regras e formato de saída.
+ * Monta o prompt que será enviado ao AI Studio para uma tarefa do checklist.
+ * Estrutura clara para o AI Studio: contexto, tarefa única, regras e formato de saída.
  */
-export function buildPromptForGemini(
+export function buildPromptForAIStudio(
   taskDescription: string,
   options?: {
     taskLine?: string;
@@ -115,10 +116,10 @@ export function getRequestedPhaseNumber(message: string): number | null {
 }
 
 /**
- * Monta o prompt para o Gemini executar TODAS as tarefas pendentes de uma fase.
+ * Monta o prompt para o AI Studio executar TODAS as tarefas pendentes de uma fase.
  * Envia só o essencial: papel, lista de tarefas da fase, regras e formato de saída (sem contexto grande).
  */
-export function buildPromptForGeminiPhase(
+export function buildPromptForAIStudioPhase(
   tasks: Array<{ taskLine?: string; taskDescription: string }>,
   _options?: {
     projectContext?: string;
@@ -145,35 +146,37 @@ export function buildPromptForGeminiPhase(
   ].join("\n");
 }
 
-/** Regex para detectar "Enviando tarefa '...' para o Gemini" na resposta do Groq. */
-const ENVIANDO_TAREFA_REGEX = /Enviando\s+tarefa\s+['"]([^'"]+)['"]\s+para\s+o\s+Gemini/i;
+/** Regex para detectar "Enviando tarefa '...' para o AI Studio" na resposta do Groq. */
+const ENVIANDO_TAREFA_REGEX = /Enviando\s+tarefa\s+['"]([^'"]+)['"]\s+para\s+o\s+AI\s+Studio/i;
 
-/** Regex para extrair bloco "PROMPT PARA O GEMINI: [texto]" (autocura ou instrução). */
-const PROMPT_PARA_GEMINI_REGEX = /PROMPT\s+PARA\s+O\s+GEMINI\s*:\s*\[?\s*([\s\S]*?)(?=\n\n|\n\[EVA_ACTION\]|$)/i;
+/** Regex para extrair bloco "PROMPT PARA O AI STUDIO: [texto]" (autocura ou instrução).
+ *  Captura TUDO após os dois pontos até [EVA_ACTION] ou fim — inclusive blocos ``` com exemplos de código,
+ *  para que o AI Studio receba caracteres especiais e exemplos completos. */
+const PROMPT_PARA_AISTUDIO_REGEX = /PROMPT\s+PARA\s+O\s+AI\s+STUDIO\s*:\s*\[?\s*([\s\S]*?)(?=\n\[EVA_ACTION\]|$)/i;
 
 /**
- * Extrai o prompt para enviar ao Gemini a partir da mensagem do assistente (Groq).
+ * Extrai o prompt para enviar ao AI Studio a partir da mensagem do assistente (Groq).
  * Retorna null se não houver prompt detectado.
  *
  * Cenários:
- * 1. Resposta contém "Enviando tarefa 'X' para o Gemini" e um bloco de código ou texto após isso.
- * 2. Resposta contém "PROMPT PARA O GEMINI: [texto]".
+ * 1. Resposta contém "Enviando tarefa 'X' para o AI Studio" e um bloco de código ou texto após isso.
+ * 2. Resposta contém "PROMPT PARA O AI STUDIO: [texto]".
  */
 export function extractPromptFromAssistantMessage(content: string): string | null {
   if (!content || typeof content !== "string") return null;
   const trimmed = content.trim();
 
-  // Tentar PROMPT PARA O GEMINI: [texto]
-  const geminiMatch = trimmed.match(PROMPT_PARA_GEMINI_REGEX);
-  if (geminiMatch && geminiMatch[1]) {
-    const prompt = geminiMatch[1].trim();
+  // Tentar PROMPT PARA O AI STUDIO: [texto]
+  const aiStudioMatch = trimmed.match(PROMPT_PARA_AISTUDIO_REGEX);
+  if (aiStudioMatch && aiStudioMatch[1]) {
+    const prompt = aiStudioMatch[1].trim();
     if (prompt.length > 10) return prompt;
   }
 
-  // Tentar após "Enviando tarefa ... para o Gemini" — pegar o restante da mensagem ou próximo bloco de código
+  // Tentar após "Enviando tarefa ... para o AI Studio" — pegar o restante da mensagem ou próximo bloco de código
   if (!ENVIANDO_TAREFA_REGEX.test(trimmed)) return null;
 
-  // Pegar o texto após a frase "Enviando tarefa ... para o Gemini" até o fim ou até [EVA_ACTION]
+  // Pegar o texto após a frase "Enviando tarefa ... para o AI Studio" até o fim ou até [EVA_ACTION]
   const afterEnviando = trimmed.split(ENVIANDO_TAREFA_REGEX);
   if (afterEnviando.length < 2) return null;
   const after = afterEnviando[afterEnviando.length - 1].trim();
@@ -182,3 +185,4 @@ export function extractPromptFromAssistantMessage(content: string): string | nul
   if (beforeEva.length < 15) return null;
   return beforeEva;
 }
+

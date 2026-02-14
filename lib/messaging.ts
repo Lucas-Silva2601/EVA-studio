@@ -59,14 +59,19 @@ function isAllowedOrigin(origin: string): boolean {
   return origin === (typeof window !== "undefined" ? window.location.origin : "") || ALLOWED_ORIGINS.includes(origin);
 }
 
-export function sendPromptToExtension(prompt: string): void {
+export type ChatInputImage = {
+  base64: string;
+  mimeType: string;
+};
+
+export function sendPromptToExtension(prompt: string, images?: ChatInputImage[]): void {
   if (typeof window === "undefined") return;
   // Não logar o conteúdo do prompt; apenas metadados (segurança).
-  console.log("[IDE -> EXT] Enviando prompt...", { promptLength: prompt?.length ?? 0 });
+  console.log("[IDE -> EXT] Enviando prompt...", { promptLength: prompt?.length ?? 0, imagesCount: images?.length ?? 0 });
   window.postMessage(
     {
       type: "EVA_STUDIO_FROM_PAGE",
-      payload: { type: "EVA_PROMPT_SEND", prompt },
+      payload: { type: "EVA_PROMPT_SEND", prompt, images },
     },
     "*"
   );
@@ -80,7 +85,7 @@ export function onExtensionMessage(
   handler: ExtensionMessageHandler,
   options?: { acceptEvaPong?: boolean }
 ): () => void {
-  if (typeof window === "undefined") return () => {};
+  if (typeof window === "undefined") return () => { };
 
   const listener = (event: MessageEvent) => {
     if (event.source !== window) return;
@@ -121,7 +126,7 @@ export function onExtensionMessage(
 /** Timeouts e handshake (docs: ver docs/performance-ux-extensao.md). */
 const PING_TIMEOUT_MS = 10000;
 const EXTENSION_HANDSHAKE_MS = 10000;
-const DEFAULT_WAIT_FOR_CODE_TIMEOUT_MS = 120000;
+const DEFAULT_WAIT_FOR_CODE_TIMEOUT_MS = 600000; // 10 minutos
 const RECONNECT_PING_ATTEMPTS = 2;
 
 /**
@@ -131,10 +136,10 @@ function normalizeExtensionErrorMessage(raw: string): string {
   if (!raw || typeof raw !== "string") return "Erro desconhecido da extensão.";
   const lower = raw.toLowerCase();
   if (lower.includes("receiving end") || lower.includes("could not establish connection") || lower.includes("não foi possível estabelecer")) {
-    return "Conexão com a extensão falhou. Recarregue a aba do Gemini (F5) e verifique se a EVA Studio Bridge está instalada.";
+    return "Conexão com a extensão falhou. Recarregue a aba do AI Studio (F5) e verifique se a EVA Studio Bridge está instalada.";
   }
   if (lower.includes("timeout")) {
-    return "Tempo esgotado. Verifique se a extensão está instalada, abra gemini.google.com em uma aba e tente novamente.";
+    return "Tempo esgotado. Verifique se a extensão está instalada, abra aistudio.google.com em uma aba e tente novamente.";
   }
   return raw;
 }
@@ -214,7 +219,8 @@ export { FILENAME_ASK_GROQ } from "@/lib/normalizeExtensionPayload";
 export function waitForCodeFromExtension(
   prompt: string,
   timeoutMs = DEFAULT_WAIT_FOR_CODE_TIMEOUT_MS,
-  onExtensionNotDetected?: () => void
+  onExtensionNotDetected?: () => void,
+  images?: ChatInputImage[]
 ): Promise<WaitForCodeResult | WaitForCodeError> {
   return new Promise((resolve) => {
     if (typeof window === "undefined") {
@@ -240,7 +246,7 @@ export function waitForCodeFromExtension(
       console.warn("[messaging] waitForCodeFromExtension timeout", { timeoutMs });
       resolve({
         ok: false,
-        error: `Tempo esgotado (${timeoutMs / 1000}s). Instale a EVA Studio Bridge, abra gemini.google.com em uma aba e recarregue a página do Gemini (F5) se necessário.`,
+        error: `Tempo esgotado (${timeoutMs / 1000}s). Instale a EVA Studio Bridge, abra aistudio.google.com em uma aba e recarregue (F5) se necessário.`,
       });
     }, timeoutMs);
 
@@ -268,6 +274,6 @@ export function waitForCodeFromExtension(
       }
     });
 
-    sendPromptToExtension(prompt);
+    sendPromptToExtension(prompt, images);
   });
 }

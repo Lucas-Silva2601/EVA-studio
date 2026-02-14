@@ -4,19 +4,19 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { MessageCircle, Loader2, AlertTriangle, Pencil, Trash2 } from "lucide-react";
 import { ChatInput, type ChatInputImage } from "@/components/layout/ChatInput";
 import { useIdeState } from "@/hooks/useIdeState";
-import { chatWithAnalyst, chatToChecklistTasks } from "@/lib/groq";
+import { chatWithAnalyst, chatToChecklistTasks, compareCodeChanges } from "@/lib/groq";
 import { getProjectContext } from "@/lib/contextPacker";
 import { getChatMessages, saveChatMessages } from "@/lib/indexedDB";
 import { ChatCodeBlock } from "@/components/layout/ChatCodeBlock";
 import { waitForCodeFromExtension, FILENAME_ASK_GROQ } from "@/lib/messaging";
 import {
-  buildPromptForGemini,
-  buildPromptForGeminiPhase,
+  buildPromptForAIStudio,
+  buildPromptForAIStudioPhase,
   buildProjectPlanPrompt,
   extractPromptFromAssistantMessage,
   getRequestedPhaseNumber,
   isProjectCreationRequest,
-} from "@/lib/geminiPrompt";
+} from "@/lib/aiStudioPrompt";
 import { ensureChecklistItemsUnchecked, mergeChecklistPhasePreservingCompleted } from "@/lib/checklistPhase";
 
 export type ChatMessage = {
@@ -76,32 +76,34 @@ export function ChatSidebar() {
   const [loading, setLoading] = useState(false);
   const [loadingContinue, setLoadingContinue] = useState(false);
   const [loadingTasks, setLoadingTasks] = useState(false);
-  const [loadingGemini, setLoadingGemini] = useState(false);
+  const [loadingAIStudio, setLoadingAIStudio] = useState(false);
   const [progress, setProgress] = useState<{ totalPending: number; completedCount: number } | null>(null);
   const [pendingImages, setPendingImages] = useState<ChatInputImage[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  /** Envia prompt ao Gemini via extensão; ao receber código, abre o diff e opcionalmente adiciona mensagem no chat (repassar ao Groq). */
-  const sendTaskToGemini = useCallback(
+  /** Envia prompt ao AI Studio via extensão; ao receber código, abre o diff e opcionalmente adiciona mensagem no chat (repassar ao Groq). */
+  const sendTaskToAIStudio = useCallback(
     async (
       prompt: string,
       task?: { taskLine: string; taskDescription: string },
-      phaseLines?: string[]
+      phaseLines?: string[],
+      images?: ChatInputImage[]
     ) => {
       if (!directoryHandle || !prompt.trim()) return;
-      setLoadingGemini(true);
-      addOutputMessage({ type: "info", text: "Enviando tarefa ao Gemini (extensão). Aguarde..." });
+      setLoadingAIStudio(true);
+      addOutputMessage({ type: "info", text: "Enviando tarefa ao AI Studio (extensão). Aguarde..." });
       if (task) setCurrentChecklistTask(task);
       try {
         const result = await waitForCodeFromExtension(
           prompt,
-          120000,
-          () => addOutputMessage({ type: "warning", text: "Extensão não detectada. Instale a EVA Studio Bridge e abra uma aba em gemini.google.com." })
+          600000,
+          () => addOutputMessage({ type: "warning", text: "Extensão não detectada. Instale a EVA Studio Bridge e abra uma aba em aistudio.google.com." }),
+          images
         );
         if (!result.ok) {
-          addOutputMessage({ type: "error", text: result.error ?? "Erro ao receber código do Gemini." });
-          setLoadingGemini(false);
+          addOutputMessage({ type: "error", text: result.error ?? "Erro ao receber código do AI Studio." });
+          setLoadingAIStudio(false);
           return;
         }
         const files = result.files ?? (result.filename || result.code ? [{ name: result.filename ?? "file.txt", content: result.code }] : []);
@@ -109,9 +111,9 @@ export function ChatSidebar() {
         if (validFiles.length === 0) {
           addOutputMessage({
             type: "warning",
-            text: "Nenhum arquivo válido recebido do Gemini. Se o nome do arquivo não foi detectado, pergunte ao Analista (Groq) o nome antes de salvar.",
+            text: "Nenhum arquivo válido recebido do AI Studio. Se o nome do arquivo não foi detectado, pergunte ao Analista o nome antes de salvar.",
           });
-          setLoadingGemini(false);
+          setLoadingAIStudio(false);
           return;
         }
         const isChecklistPhaseFile = (path: string) => /^docs\/fase-\d+\.md$/i.test(path.replace(/\\/g, "/"));
@@ -148,23 +150,46 @@ export function ChatSidebar() {
           refreshFileTree().then(() => getChecklistProgress().then(setProgress));
         } else {
           const codeFilesOnly = normalizedFiles.filter((f) => !isChecklistPhaseFile(f.filePath));
-          proposeChangesFromChat(codeFilesOnly.length > 0 ? codeFilesOnly : normalizedFiles, {
+          const filesToPropose = codeFilesOnly.length > 0 ? codeFilesOnly : normalizedFiles;
+          proposeChangesFromChat(filesToPropose, {
             phaseLines: phaseLines ?? (task ? [task.taskLine] : undefined),
           });
-          const fileList = (codeFilesOnly.length > 0 ? codeFilesOnly : normalizedFiles).map((f) => f.filePath).join(", ");
+          const fileList = filesToPropose.map((f) => f.filePath).join(", ");
+          let assistantContent = `**O AI Studio concluiu a tarefa e gerou os arquivos:** ${fileList}. Revise as alterações no diff e aceite para salvar no projeto.`;
+          try {
+            const analyses: string[] = [];
+            for (const f of filesToPropose) {
+              try {
+                const originalContent = await readFileContent(f.filePath);
+                const analysis = await compareCodeChanges({
+                  filePath: f.filePath,
+                  originalContent,
+                  newContent: f.proposedContent,
+                  taskDescription: task?.taskDescription ?? null,
+                });
+                if (analysis.trim()) {
+                  analyses.push(`**${f.filePath}:** ${analysis.trim()}`);
+                }
+              } catch {
+                /* Arquivo novo ou erro ao ler: pula análise */
+              }
+            }
+            if (analyses.length > 0) {
+              assistantContent += `\n\n**Análise das alterações (Llama):**\n${analyses.join("\n\n")}`;
+            }
+          } catch {
+            /* Falha na análise: mantém mensagem básica */
+          }
           setMessages((prev) => [
             ...prev,
-            {
-              role: "assistant",
-              content: `**O Gemini concluiu a tarefa e gerou os arquivos:** ${fileList}. Revise as alterações no diff e aceite para salvar no projeto.`,
-            },
+            { role: "assistant", content: assistantContent },
           ]);
-          addOutputMessage({ type: "success", text: `Código recebido do Gemini (${validFiles.length} arquivo(s)). Revise o diff.` });
+          addOutputMessage({ type: "success", text: `Código recebido do AI Studio (${validFiles.length} arquivo(s)). Revise o diff.` });
         }
       } catch (err) {
-        addOutputMessage({ type: "error", text: `Erro ao enviar/receber do Gemini: ${(err as Error).message}` });
+        addOutputMessage({ type: "error", text: `Erro ao enviar/receber do AI Studio: ${(err as Error).message}` });
       } finally {
-        setLoadingGemini(false);
+        setLoadingAIStudio(false);
       }
     },
     [
@@ -176,11 +201,12 @@ export function ChatSidebar() {
       refreshFileTree,
       getChecklistProgress,
       readFileContent,
+      compareCodeChanges,
     ]
   );
 
-  /** Envia automaticamente a próxima tarefa do checklist ao Gemini (quando não há prompt explícito na resposta do Groq). */
-  const sendNextTaskToGeminiIfAny = useCallback(async () => {
+  /** Envia automaticamente a próxima tarefa do checklist ao AI Studio (quando não há prompt explícito na resposta do Groq). */
+  const sendNextTaskToAIStudioIfAny = useCallback(async () => {
     if (!directoryHandle) return;
     try {
       const openChecklist = activeFilePath === "checklist.md" ? openFiles.find((f) => f.path === "checklist.md") : null;
@@ -189,11 +215,11 @@ export function ChatSidebar() {
       if (!nextTask) return;
       const projectContext =
         fileTree.length > 0 ? await getProjectContext(directoryHandle, fileTree) : "";
-      const prompt = buildPromptForGemini(nextTask.taskDescription, {
+      const prompt = buildPromptForAIStudio(nextTask.taskDescription, {
         taskLine: nextTask.taskLine,
         projectContext: projectContext || undefined,
       });
-      await sendTaskToGemini(prompt, nextTask, [nextTask.taskLine]);
+      await sendTaskToAIStudio(prompt, nextTask, [nextTask.taskLine]);
     } catch {
       // Silencioso: não interrompe o fluxo do chat
     }
@@ -205,7 +231,7 @@ export function ChatSidebar() {
     getNextTaskFromContent,
     fileTree,
     getProjectContext,
-    sendTaskToGemini,
+    sendTaskToAIStudio,
   ]);
 
   const handleStopGenerating = useCallback(() => {
@@ -306,7 +332,7 @@ export function ChatSidebar() {
           ? await getProjectContext(directoryHandle, fileTree)
           : "";
       const reply = await chatWithAnalyst({
-        provider: "groq",
+        provider: "ollama",
         messages: historyWithContinuation,
         projectId,
         projectContext: projectContext || undefined,
@@ -328,11 +354,11 @@ export function ChatSidebar() {
         return next;
       });
       executeEvaActions(reply.content);
-      const promptForGemini = extractPromptFromAssistantMessage(mergedContent);
-      if (promptForGemini) {
-        sendTaskToGemini(promptForGemini);
+      const promptForAIStudio = extractPromptFromAssistantMessage(mergedContent);
+      if (promptForAIStudio) {
+        sendTaskToAIStudio(promptForAIStudio);
       } else {
-        sendNextTaskToGeminiIfAny();
+        sendNextTaskToAIStudioIfAny();
       }
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") {
@@ -358,8 +384,8 @@ export function ChatSidebar() {
     addOutputMessage,
     getChecklistContentForContext,
     executeEvaActions,
-    sendTaskToGemini,
-    sendNextTaskToGeminiIfAny,
+    sendTaskToAIStudio,
+    sendNextTaskToAIStudioIfAny,
   ]);
 
   const handleSend = async (imgs: ChatInputImage[] = []) => {
@@ -390,7 +416,7 @@ export function ChatSidebar() {
           : "";
 
       const reply = await chatWithAnalyst({
-        provider: "groq",
+        provider: "ollama",
         messages: history,
         images: imgs.length > 0 ? imgs.map((i) => ({ base64: i.base64, mimeType: i.mimeType })) : undefined,
         projectId,
@@ -405,12 +431,14 @@ export function ChatSidebar() {
         { role: "assistant", content: reply.content, isTruncated: reply.isTruncated },
       ]);
       executeEvaActions(reply.content);
-      const promptForGemini = extractPromptFromAssistantMessage(reply.content);
+      const promptForAIStudio = extractPromptFromAssistantMessage(reply.content);
       const isFirstCommand = messages.length === 0;
       const wantsProjectCreation = isProjectCreationRequest(userMsg.content);
       const requestedPhase = getRequestedPhaseNumber(userMsg.content);
-      if (promptForGemini) {
-        sendTaskToGemini(promptForGemini);
+      if (promptForAIStudio) {
+        // Envia as imagens originais do usuário se houver
+        const userImages = userMsg.images;
+        sendTaskToAIStudio(promptForAIStudio, undefined, undefined, userImages);
       } else if (isFirstCommand && wantsProjectCreation) {
         if (!directoryHandle) {
           addOutputMessage({
@@ -418,23 +446,23 @@ export function ChatSidebar() {
             text: "Abra uma pasta do projeto (Abrir pasta) antes de criar o plano em fases. O checklist será salvo em docs/fase-1.md, docs/fase-2.md, etc.",
           });
         } else {
-          sendTaskToGemini(buildProjectPlanPrompt(userMsg.content));
+          sendTaskToAIStudio(buildProjectPlanPrompt(userMsg.content));
         }
       } else if (requestedPhase != null && directoryHandle) {
         const checklistContent = await getChecklistContentForContext();
         const phaseTasks = await getTasksForPhase(checklistContent ?? "", requestedPhase);
         if (phaseTasks.length > 0) {
-          const prompt = buildPromptForGeminiPhase(phaseTasks);
-          await sendTaskToGemini(prompt, undefined, phaseTasks.map((t) => t.taskLine));
+          const prompt = buildPromptForAIStudioPhase(phaseTasks);
+          await sendTaskToAIStudio(prompt, undefined, phaseTasks.map((t) => t.taskLine));
         } else {
           addOutputMessage({
             type: "info",
             text: `Nenhuma tarefa pendente na Fase ${requestedPhase}. Todas já foram concluídas ou a fase não existe.`,
           });
-          sendNextTaskToGeminiIfAny();
+          sendNextTaskToAIStudioIfAny();
         }
       } else {
-        sendNextTaskToGeminiIfAny();
+        sendNextTaskToAIStudioIfAny();
       }
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") {
@@ -561,11 +589,10 @@ export function ChatSidebar() {
             }
           >
             <div
-              className={`rounded-md px-2 py-1.5 break-words border-l-2 ${
-                m.role === "user"
-                  ? "bg-ds-accent-neon/20 border-ds-accent-neon text-ds-text-primary-light dark:text-ds-text-primary"
-                  : "bg-ds-bg-secondary-light dark:bg-vscode-bg/80 text-ds-text-primary-light dark:text-ds-text-primary border-ds-border-light dark:border-vscode-border"
-              }`}
+              className={`rounded-md px-2 py-1.5 break-words border-l-2 ${m.role === "user"
+                ? "bg-ds-accent-neon/20 border-ds-accent-neon text-ds-text-primary-light dark:text-ds-text-primary"
+                : "bg-ds-bg-secondary-light dark:bg-vscode-bg/80 text-ds-text-primary-light dark:text-ds-text-primary border-ds-border-light dark:border-vscode-border"
+                }`}
             >
               <span className="text-[10px] font-medium text-ds-text-secondary-light dark:text-ds-text-secondary block mb-0.5">
                 {m.role === "user" ? "Você" : "Engenheiro Chefe"}
@@ -600,9 +627,8 @@ export function ChatSidebar() {
               )}
             </div>
             <div
-              className={`flex items-center gap-1.5 py-0.5 ${
-                m.role === "user" ? "justify-end" : "justify-start"
-              }`}
+              className={`flex items-center gap-1.5 py-0.5 ${m.role === "user" ? "justify-end" : "justify-start"
+                }`}
             >
               <button
                 type="button"

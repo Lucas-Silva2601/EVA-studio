@@ -1,11 +1,11 @@
 /**
- * Cliente do Agente Analista (Groq) — chamadas à API via rota Next.js.
- * A API Key fica apenas no servidor (GROQ_API_KEY em .env.local).
+ * Cliente do Agente Analista (Ollama) — chamadas à API via rota Next.js.
+ * O Ollama roda localmente em http://localhost:11434.
  */
 
 import type { ChecklistAnalysisResult, ValidationResult } from "@/types";
 
-const API_GROQ_NOT_FOUND_MSG =
+const API_NOT_FOUND_MSG =
   "Erro: Servidor de IA não encontrado. Verifique se a rota app/api/groq/route.ts existe e se o Next.js está rodando.";
 
 async function groqFetch(action: string, payload: unknown): Promise<string> {
@@ -25,14 +25,12 @@ async function groqFetch(action: string, payload: unknown): Promise<string> {
   if (!res.ok) {
     const message =
       res.status === 404
-        ? API_GROQ_NOT_FOUND_MSG
-        : res.status === 429
-          ? (data.error ?? "Limite de taxa da API excedido. Aguarde e tente novamente.")
-          : res.status === 503
-            ? (data.error ?? "Serviço de IA indisponível. Verifique .env.local (GROQ_API_KEY).")
-            : res.status === 500
-              ? (data.error ?? API_GROQ_NOT_FOUND_MSG)
-              : data.error ?? `Erro ${res.status}`;
+        ? API_NOT_FOUND_MSG
+        : res.status === 503
+          ? (data.error ?? "Ollama não está rodando. Inicie com: ollama serve")
+          : res.status === 500
+            ? (data.error ?? API_NOT_FOUND_MSG)
+            : data.error ?? `Erro ${res.status}`;
     throw new Error(message);
   }
 
@@ -45,7 +43,7 @@ export interface ChatResponse {
   isTruncated: boolean;
 }
 
-export type ChatProvider = "groq";
+export type ChatProvider = "ollama";
 
 async function groqFetchChat(payload: unknown, signal?: AbortSignal): Promise<ChatResponse> {
   const res = await fetch("/api/groq", {
@@ -69,14 +67,12 @@ async function groqFetchChat(payload: unknown, signal?: AbortSignal): Promise<Ch
   if (!res.ok) {
     const message =
       res.status === 404
-        ? API_GROQ_NOT_FOUND_MSG
-        : res.status === 429
-          ? (data.error ?? "Limite de taxa da API excedido. Aguarde e tente novamente.")
-          : res.status === 503
-            ? (data.error ?? "Serviço de IA indisponível. Verifique .env.local (GROQ_API_KEY).")
-            : res.status === 500
-              ? (data.error ?? API_GROQ_NOT_FOUND_MSG)
-              : data.error ?? `Erro ${res.status}`;
+        ? API_NOT_FOUND_MSG
+        : res.status === 503
+          ? (data.error ?? "Ollama não está rodando. Inicie com: ollama serve")
+          : res.status === 500
+            ? (data.error ?? API_NOT_FOUND_MSG)
+            : data.error ?? `Erro ${res.status}`;
     throw new Error(message);
   }
 
@@ -124,7 +120,7 @@ function cleanJsonResponse(raw: string): string {
 }
 
 /**
- * Lê o checklist, envia ao Groq e retorna a próxima tarefa pendente (ou array de tarefas da fase).
+ * Lê o checklist, envia ao Analista (Ollama) e retorna a próxima tarefa pendente (ou array de tarefas da fase).
  */
 export async function analyzeChecklist(
   checklistContent: string,
@@ -213,7 +209,7 @@ export async function chatWithAnalyst(payload: {
   projectContext?: string | null;
   openFileContext?: { path: string; content: string } | null;
   checklistContext?: string | null;
-  /** Imagens em Base64 (Groq vision). */
+  /** Imagens em Base64 (Ollama llava). */
   images?: Array<{ base64: string; mimeType: string }>;
   /** Sinal para cancelar a requisição (ex.: botão Interromper). */
   signal?: AbortSignal;
@@ -241,6 +237,19 @@ export async function chatToChecklistTasks(payload: {
   checklistContent?: string | null;
 }): Promise<string> {
   const result = await groqFetch("chat_to_tasks", payload);
+  return result.trim();
+}
+
+/**
+ * Compara código original vs código do AI Studio. Retorna análise em linguagem natural das mudanças e melhorias.
+ */
+export async function compareCodeChanges(payload: {
+  filePath: string;
+  originalContent: string;
+  newContent: string;
+  taskDescription?: string | null;
+}): Promise<string> {
+  const result = await groqFetch("compare_code_changes", payload);
   return result.trim();
 }
 
