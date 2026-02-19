@@ -14,7 +14,8 @@
     "http://127.0.0.1:3000/*",
     "http://127.0.0.1:3001/*",
     "https://aistudio.google.com/*",
-    "https://www.aistudio.google.com/*"
+    "https://www.aistudio.google.com/*",
+    "https://gemini.google.com/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -27,6 +28,15 @@
       ],
       "js": [
         "content-aistudio.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://gemini.google.com/*"
+      ],
+      "js": [
+        "content-gemini.js"
       ],
       "run_at": "document_idle"
     },
@@ -45,6 +55,10 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "EVA Bridge v3.1 – Status"
+    "default_title": "EVA Bridge v3.1 – Status",
+    "default_icon": "icon128.png"
+  },
+  "icons": {
+    "128": "icon128.png"
   }
 }

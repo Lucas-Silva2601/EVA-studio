@@ -93,7 +93,7 @@ export function buildPromptForAIStudio(
   parts.push(
     "",
     "[SAÍDA]",
-    "Retorne somente os blocos de código, cada um começando com FILE: caminho/arquivo na primeira linha. Nada antes nem depois dos blocos."
+    "Retorne somente os blocos de código em formato Markdown (```), cada um começando com FILE: caminho/arquivo na primeira linha dentro do bloco. Nada antes nem depois dos blocos."
   );
   return parts.join("\n");
 }
@@ -142,7 +142,7 @@ export function buildPromptForAIStudioPhase(
     "- Implemente todas na ordem listada.",
     "",
     "[SAÍDA]",
-    "Somente blocos de código, cada um com FILE: na primeira linha. Nada antes nem depois.",
+    "Somente blocos de código em formato Markdown (```), cada um com FILE: na primeira linha dentro do bloco. Nada antes nem depois.",
   ].join("\n");
 }
 
@@ -150,9 +150,8 @@ export function buildPromptForAIStudioPhase(
 const ENVIANDO_TAREFA_REGEX = /Enviando\s+tarefa\s+['"]([^'"]+)['"]\s+para\s+o\s+AI\s+Studio/i;
 
 /** Regex para extrair bloco "PROMPT PARA O AI STUDIO: [texto]" (autocura ou instrução).
- *  Captura TUDO após os dois pontos até [EVA_ACTION] ou fim — inclusive blocos ``` com exemplos de código,
- *  para que o AI Studio receba caracteres especiais e exemplos completos. */
-const PROMPT_PARA_AISTUDIO_REGEX = /PROMPT\s+PARA\s+O\s+AI\s+STUDIO\s*:\s*\[?\s*([\s\S]*?)(?=\n\[EVA_ACTION\]|$)/i;
+ *  Captura TUDO após os dois pontos até [EVA_ACTION] ou fim. */
+const PROMPT_PARA_AISTUDIO_REGEX = /PROMPT\s+PARA\s+O\s+AI\s+STUDIO(?:,?\s*GEMINI)?\s*[:\s]*\[?\s*([\s\S]*?)(?=\n\[EVA_ACTION\]|$)/i;
 
 /**
  * Extrai o prompt para enviar ao AI Studio a partir da mensagem do assistente (Groq).

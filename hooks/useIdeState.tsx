@@ -37,6 +37,7 @@ import {
   getDirectoryHandle,
   clearDirectoryHandle,
   verifyDirectoryPermission,
+  requestDirectoryPermission,
 } from "@/lib/indexedDB";
 import { detectProjectType, getRuntimeForFile } from "@/lib/projectType";
 import {
@@ -185,6 +186,8 @@ interface IdeStateContextValue {
   pendingTerminalCommands: string[];
   /** Limpa a fila de comandos sugeridos pela IA. */
   clearPendingTerminalCommands: () => void;
+  /** Solicita explicitamente permissão de escrita (deve ser chamado em clique). */
+  requestWritePermission: () => Promise<boolean>;
 }
 
 const IdeStateContext = createContext<IdeStateContextValue | null>(null);
@@ -240,6 +243,15 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
     },
     []
   );
+
+  const requestWritePermission = useCallback(async (): Promise<boolean> => {
+    if (!directoryHandle) return false;
+    const ok = await requestDirectoryPermission(directoryHandle, "readwrite");
+    if (ok) {
+      addOutputMessage({ type: "success", text: "Permissão de escrita concedida." });
+    }
+    return ok;
+  }, [directoryHandle, addOutputMessage]);
 
   /** Extensões de arquivos servíveis no Live Preview. */
   const PREVIEW_EXTENSIONS = new Set([
@@ -416,24 +428,32 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
       getDirectoryHandle()
         .then(async (handle) => {
           if (!handle) return;
-          const ok = await verifyDirectoryPermission(handle);
-          if (!ok) {
-            await clearDirectoryHandle();
-            addOutputMessage({
-              type: "info",
-              text: "Permissão da pasta salva expirou. Abra a pasta novamente.",
-            });
-            return;
-          }
+          // Apenas verifica permissão de leitura para carregar a árvore
+          const ok = await verifyDirectoryPermission(handle, "read");
+
           setDirectoryHandle(handle);
           setFolderName(handle.name);
-          addOutputMessage({ type: "info", text: `Pasta restaurada: ${handle.name}` });
-          await ensureChecklistExists(handle);
-          const tree = await listDirectoryRecursive(handle);
-          setFileTree(tree);
-          addOutputMessage({ type: "success", text: "Projeto restaurado da última sessão." });
+
+          if (!ok) {
+            addOutputMessage({
+              type: "warning",
+              text: `Pasta restaurada: ${handle.name}. Clique em qualquer lugar para reativar permissões se necessário.`,
+            });
+          } else {
+            addOutputMessage({ type: "info", text: `Pasta restaurada: ${handle.name}` });
+          }
+
+          try {
+            await ensureChecklistExists(handle);
+            const tree = await listDirectoryRecursive(handle);
+            setFileTree(tree);
+          } catch (treeErr) {
+            console.warn("Erro ao carregar árvore na restauração:", treeErr);
+          }
         })
-        .catch(() => {});
+        .catch((err) => {
+          console.error("Erro ao restaurar handle:", err);
+        });
     };
     if (typeof requestIdleCallback !== "undefined") {
       requestIdleCallback(runRestore, { timeout: 2000 });
@@ -1277,6 +1297,7 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
     refreshPreviewFiles,
     pendingTerminalCommands,
     clearPendingTerminalCommands: () => setPendingTerminalCommands([]),
+    requestWritePermission,
   };
 
   return (

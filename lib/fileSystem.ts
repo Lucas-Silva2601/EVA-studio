@@ -23,6 +23,37 @@ export const DEFAULT_IGNORE_DIRS = [
 ];
 
 /**
+ * Verifica se temos permissão de leitura/escrita no diretório.
+ * Se não tiver, tenta solicitar.
+ * OBS: requestPermission só funciona se for chamado logo após uma ação do usuário (clique).
+ */
+export async function verifyPermission(
+  fileHandle: FileSystemHandle,
+  readWrite: boolean = true
+): Promise<boolean> {
+  const options: FileSystemHandlePermissionDescriptor = {};
+  if (readWrite) {
+    options.mode = 'readwrite';
+  }
+
+  // 1. Verifica se já tem permissão
+  const currentStatus = await fileHandle.queryPermission(options);
+  if (currentStatus === 'granted') {
+    return true;
+  }
+
+  // 2. Se não tem, tenta solicitar ao usuário. 
+  // Envolvemos em try-catch porque isso LANÇA ERRO se não houver um clique recente.
+  try {
+    const newStatus = await fileHandle.requestPermission(options);
+    return newStatus === 'granted';
+  } catch (err) {
+    console.warn("Falha ao solicitar permissão (requer gesto do usuário):", err);
+    return false;
+  }
+}
+
+/**
  * Lista recursivamente arquivos e pastas a partir do handle, construindo árvore.
  * @param handle - Handle do diretório raiz
  * @param basePath - Caminho base acumulado (ex: "" ou "src/components")
@@ -69,6 +100,11 @@ export async function readFileContent(
   rootHandle: FileSystemDirectoryHandle,
   relativePath: string
 ): Promise<string> {
+  // Leitura geralmente não precisa de user activation se a pasta já foi aberta,
+  // mas é bom garantir.
+  const hasPermission = await verifyPermission(rootHandle, false);
+  if (!hasPermission) throw new Error("Permissão de leitura negada.");
+
   const parts = relativePath.replace(/^\//, "").split("/");
   if (parts.length === 0) throw new Error("Caminho inválido");
 
@@ -92,6 +128,10 @@ export async function writeFileContent(
   relativePath: string,
   content: string
 ): Promise<void> {
+  // VERIFICAÇÃO DE PERMISSÃO DE ESCRITA ADICIONADA
+  const hasPermission = await verifyPermission(rootHandle, true);
+  if (!hasPermission) throw new Error("Permissão de escrita necessária. Clique na tela e tente novamente.");
+
   const parts = relativePath.replace(/^\//, "").split("/");
   if (parts.length === 0) throw new Error("Caminho inválido");
 
@@ -114,6 +154,10 @@ export async function createFileWithContent(
   relativePath: string,
   content: string
 ): Promise<void> {
+  // VERIFICAÇÃO DE PERMISSÃO DE ESCRITA ADICIONADA
+  const hasPermission = await verifyPermission(rootHandle, true);
+  if (!hasPermission) throw new Error("Permissão de escrita necessária. Clique na tela e tente novamente.");
+
   const parts = relativePath.replace(/^\//, "").split("/");
   if (parts.length === 0) throw new Error("Caminho inválido");
 
@@ -135,6 +179,10 @@ export async function createDirectory(
   rootHandle: FileSystemDirectoryHandle,
   relativePath: string
 ): Promise<void> {
+  // VERIFICAÇÃO DE PERMISSÃO DE ESCRITA ADICIONADA
+  const hasPermission = await verifyPermission(rootHandle, true);
+  if (!hasPermission) throw new Error("Permissão de escrita necessária.");
+
   const parts = relativePath.replace(/^\//, "").split("/").filter(Boolean);
   if (parts.length === 0) throw new Error("Caminho inválido");
 
@@ -321,8 +369,8 @@ export async function updateChecklistOnDisk(
   const useFuzzy = docPaths.length === 0;
   const fuzzyKeys = useFuzzy
     ? toMark.map((l) =>
-        stripMarkdownFormatting(l.replace(/^\s*[-–—−]\s*\[\s*[ xX]\s*\]\s*/i, "").trim()).toLowerCase().replace(/\s+/g, " ")
-      )
+      stripMarkdownFormatting(l.replace(/^\s*[-–—−]\s*\[\s*[ xX]\s*\]\s*/i, "").trim()).toLowerCase().replace(/\s+/g, " ")
+    )
     : [];
   let changed = false;
   for (let i = 0; i < lines.length; i++) {
@@ -371,11 +419,15 @@ export async function updateChecklistOnDisk(
       );
       if (!sectionHasMarkedLine) continue;
       const body = sectionContent.replace(/^## Fase \d+\s*\n+/i, "").trim();
+
+      // Usa a função que já tem verificação de permissão
       await createFileWithContent(rootHandle, docPaths[i], body);
     }
     return;
   }
   try {
+    // Se for escrever no checklist.md, verificamos permissão manualmente aqui pois getFileHandle pode falhar antes de escrever
+    await verifyPermission(rootHandle, true);
     const fileHandle = await rootHandle.getFileHandle(CHECKLIST_FILENAME);
     const writable = await fileHandle.createWritable();
     await writable.write(newContent);
@@ -422,6 +474,10 @@ export async function deleteFile(
   rootHandle: FileSystemDirectoryHandle,
   relativePath: string
 ): Promise<void> {
+  // VERIFICAÇÃO DE PERMISSÃO DE ESCRITA ADICIONADA
+  const hasPermission = await verifyPermission(rootHandle, true);
+  if (!hasPermission) throw new Error("Permissão de escrita necessária.");
+
   const path = relativePath.replace(/^\//, "").trim();
   if (!path) throw new Error("Caminho inválido");
   const parts = path.split("/");
@@ -444,6 +500,10 @@ export async function deleteDirectory(
   rootHandle: FileSystemDirectoryHandle,
   relativePath: string
 ): Promise<void> {
+  // VERIFICAÇÃO DE PERMISSÃO DE ESCRITA ADICIONADA
+  const hasPermission = await verifyPermission(rootHandle, true);
+  if (!hasPermission) throw new Error("Permissão de escrita necessária.");
+
   const path = relativePath.replace(/^\//, "").trim();
   if (!path) throw new Error("Caminho inválido");
   const parts = path.split("/");

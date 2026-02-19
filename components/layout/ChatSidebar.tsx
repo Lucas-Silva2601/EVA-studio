@@ -66,6 +66,7 @@ export function ChatSidebar() {
     createFileWithContent,
     refreshFileTree,
     readFileContent,
+    requestWritePermission,
   } = useIdeState();
 
   const projectId = folderName ?? "Projeto não aberto";
@@ -91,6 +92,10 @@ export function ChatSidebar() {
       images?: ChatInputImage[]
     ) => {
       if (!directoryHandle || !prompt.trim()) return;
+      // Garante permissão de escrita IMEDIATAMENTE após o clique do usuário
+      const hasWrite = await requestWritePermission();
+      if (!hasWrite) return;
+
       setLoadingAIStudio(true);
       addOutputMessage({ type: "info", text: "Enviando tarefa ao AI Studio (extensão). Aguarde..." });
       if (task) setCurrentChecklistTask(task);
@@ -391,6 +396,10 @@ export function ChatSidebar() {
   const handleSend = async (imgs: ChatInputImage[] = []) => {
     const text = input.trim();
     if ((!text && imgs.length === 0) || loading) return;
+
+    // Proativo: solicita permissão de escrita no clique
+    await requestWritePermission();
+
     setInput("");
     setPendingImages([]);
     const userMsg: ChatMessage = {
@@ -495,6 +504,7 @@ export function ChatSidebar() {
       addOutputMessage({ type: "error", text: "Abra uma pasta antes de adicionar tarefas ao checklist." });
       return;
     }
+    await requestWritePermission();
     setLoadingTasks(true);
     try {
       const checklistContent =

@@ -87,8 +87,7 @@ export async function clearDirectoryHandle(): Promise<void> {
 }
 
 /**
- * Verifica se a permissão do handle ainda está concedida.
- * Útil após restaurar o handle do IndexedDB.
+ * Verifica se a permissão do handle já está concedida (sem solicitar).
  */
 export async function verifyDirectoryPermission(
   handle: FileSystemDirectoryHandle,
@@ -96,10 +95,24 @@ export async function verifyDirectoryPermission(
 ): Promise<boolean> {
   try {
     const state = await handle.queryPermission({ mode });
-    if (state === "granted") return true;
+    return state === "granted";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Solicita explicitamente a permissão ao usuário (deve ser chamado em evento de clique).
+ */
+export async function requestDirectoryPermission(
+  handle: FileSystemDirectoryHandle,
+  mode: "read" | "readwrite" = "readwrite"
+): Promise<boolean> {
+  try {
     const newState = await handle.requestPermission({ mode });
     return newState === "granted";
-  } catch {
+  } catch (err) {
+    console.warn("Falha ao solicitar permissão (requer gesto do usuário):", err);
     return false;
   }
 }
