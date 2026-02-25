@@ -5,7 +5,6 @@
 import {
   blocksToFiles,
   parseCodeBlocksFromMarkdown,
-  parseSingleFileWithFilePrefix,
   extractFilePathStrict,
   extractFilePathFromFullText,
   stripFilenameComment,
@@ -29,8 +28,12 @@ function extractFileNameFromResponse(rawCode: string): string | null {
   return path ?? null;
 }
 
+/**
+ * Retorna true se o nome é genérico gerado automaticamente (file_N ou file_N.ext).
+ * Expandido para capturar qualquer extensão, não apenas .txt.
+ */
 function isGenericFilename(name: string): boolean {
-  return /^file_\d+\.txt$/i.test(name?.trim() ?? "");
+  return /^file_\d+(\.\w{1,10})?$/i.test(name?.trim() ?? "");
 }
 
 function filterSnippetOrCommand(files: Array<{ name: string; content: string }>): Array<{ name: string; content: string }> {
@@ -39,8 +42,17 @@ function filterSnippetOrCommand(files: Array<{ name: string; content: string }>)
 
 /**
  * Normaliza o payload da extensão para lista de arquivos.
- * Regra: FILE: em todo o texto ou em blocos markdown → usa esse nome; senão FILENAME_ASK_GROQ.
- * Fallback: quando extensão envia file_N.txt, infere nome pelo conteúdo.
+ *
+ * ORDEM DE PRIORIDADE (mais confiável primeiro):
+ * 1. `p.files` com múltiplos arquivos (extensão já parseou)
+ * 2. `p.blocks` (blocos brutos da extensão)
+ * 3. `parseCodeBlocksFromMarkdown(p.code)` — detecta TODOS os blocos no texto bruto
+ * 4. Fallback: nome inferido pelo conteúdo ou FILENAME_ASK_GROQ
+ *
+ * IMPORTANTE: parseSingleFileWithFilePrefix NÃO é mais chamado aqui como short-circuit,
+ * pois ele retornava apenas 1 arquivo mesmo quando havia múltiplos blocos FILE:.
+ * `parseCodeBlocksFromMarkdown` já inclui parseSingleFileWithFilePrefix internamente
+ * como fallback quando nenhum bloco de código é encontrado.
  */
 export function normalizeToFiles(p: NormalizablePayload): Array<{ name: string; content: string }> {
   if (p.files && p.files.length > 0) {
@@ -52,43 +64,48 @@ export function normalizeToFiles(p: NormalizablePayload): Array<{ name: string; 
         return { name: fromComment, content: stripFilenameComment(f.content) };
       }
 
-      // 2. Se a extensão enviou file_0.txt ou a inferência falhou, tenta inferir pela sintaxe
+      // 2. Se o nome é genérico (file_N.txt, file_N.py, file_N.ts, etc.), tenta inferir pela sintaxe
       if (isGenericFilename(f.name)) {
         const inferred = inferFilenameFromContent(f.content);
         if (inferred) return { name: inferred, content: stripFilenameComment(f.content) };
+        // Mantém o nome com extensão de linguagem se existir (ex: file_0.py é melhor que perder o arquivo)
       }
       return f;
     });
     return filterSnippetOrCommand(mapped);
   }
-  if (p.blocks && p.blocks.length > 0) return filterSnippetOrCommand(blocksToFiles(p.blocks));
+
+  if (p.blocks && p.blocks.length > 0) {
+    // Converte blocos brutos para arquivos e tenta melhorar nomes genéricos (file_N.ext)
+    const fromBlocks = blocksToFiles(p.blocks).map((f) => {
+      // Se o nome é genérico, tenta inferir melhor pelo conteúdo
+      if (isGenericFilename(f.name)) {
+        const fromComment = extractFilePathStrict(f.content);
+        if (fromComment) return { name: fromComment, content: stripFilenameComment(f.content) };
+        const inferred = inferFilenameFromContent(f.content);
+        if (inferred) return { name: inferred, content: f.content };
+      }
+      return f;
+    });
+    return filterSnippetOrCommand(fromBlocks);
+  }
+
   const rawCode = (p.code ?? "").trim();
   if (!rawCode) return [];
-  const singleWithPrefix = parseSingleFileWithFilePrefix(rawCode);
-  if (singleWithPrefix) {
-    if (isSnippetOrCommand(singleWithPrefix.content)) return [];
-    return [singleWithPrefix];
-  }
+
+  // Usa o parser robusto que detecta TODOS os blocos de código (suporta múltiplos arquivos).
+  // NÃO usa parseSingleFileWithFilePrefix como short-circuit — isso bloqueava detecção de
+  // múltiplos arquivos quando o texto começava com "FILE: nome.ext".
   const fromMarkdown = parseCodeBlocksFromMarkdown(rawCode);
   const filteredMarkdown = filterSnippetOrCommand(fromMarkdown);
-  const fileFromText = extractFileNameFromResponse(rawCode);
+
   if (filteredMarkdown.length > 0) {
-    if (fileFromText && filteredMarkdown.length === 1) {
-      const content = stripFilenameComment(filteredMarkdown[0].content);
-      return [{ name: fileFromText, content }];
-    }
-    const hasFilePrefix = /FILE\s*:/i.test(rawCode);
-    if (hasFilePrefix && filteredMarkdown.length === 1) {
-      const strictPath = extractFilePathStrict(rawCode);
-      if (strictPath) {
-        const content = stripFilenameComment(filteredMarkdown[0].content);
-        return [{ name: strictPath, content }];
-      }
-    }
     return filteredMarkdown;
   }
+
+  // Fallback final: texto puro sem blocos de código
   if (isSnippetOrCommand(rawCode)) return [];
-  const strictPath = fileFromText ?? extractFilePathStrict(rawCode);
+  const strictPath = extractFileNameFromResponse(rawCode);
   const inferred = inferFilenameFromContent(rawCode);
   const name = strictPath ?? p.filename?.trim() ?? inferred ?? FILENAME_ASK_GROQ;
   const content = strictPath || inferred ? stripFilenameComment(rawCode) : rawCode;

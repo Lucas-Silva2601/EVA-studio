@@ -67,41 +67,29 @@ Se for solicitado um targetPhase específico, retorne uma lista (array) em forma
       const geminiOutput = body.payload?.geminiOutput || "";
 
       if (geminiOutput) {
-        // Isso executa a "Otimização Executiva" para transformar saída suja do Gemini em blocos FILE: puros e processáveis pelo EVA Studio
-        const promptOtimizacao = `PROJETO: EVA Studio (Otimização Executiva)
+        // Isso executa a "Otimização Executiva" para explicar ao usuário humano o que foi feito pelo Gemini, sem sujar o chat com código.
+        const promptOtimizacao = `PROJETO: EVA Studio (Resumo Executivo)
 CONTEXTO ATUAL (ESTRUTURA/ARQUIVOS):
 ${projectContext}
 
-CHECKLIST (PLANO):
+CHECKLIST (PLANO/ROADMAP):
 ${checklistContext}
 
 USUÁRIO PEDIU: ${lastUserMessage}
-CÓDIGO GERADO PELO GEMINI (USE PARA COMPARAR E GERAR PATCHES):
+CÓDIGO GERADO PELO GEMINI (IMPLEMENTAÇÃO JÁ APLICADA NOS ARQUIVOS DO PROJETO):
 ${geminiOutput}
 
-REGRAS DE OURO (SISTEMA DE ARQUIVOS):
-1. ATUAÇÃO ESTRITA: Você é um otimizador de código. Sua única função é formatar a intenção do Gemini em blocos de arquivos limpos para o frontend.
-2. PRESERVAÇÃO DE CAMINHOS: Ao identificar que o Gemini quer criar ou editar um arquivo (ex: \`// Ficheiro: js/main.js\`, \`/* src/styles.css */\`, \`FILE: utils/api.ts\`), você DEVE copiar o caminho EXATAMENTE como está, INCLUINDO TODAS AS PASTAS. Nunca abrevie \`js/main.js\` para \`main.js\`.
-3. TRANSCRIÇÃO DE CÓDIGO: Copie o bloco de código do Gemini INTEIRO. NUNCA use comentários como "// ...resto do código...". O código deve ser reescrito por completo.
+REGRAS DE OURO:
+1. ATUAÇÃO ESTRITA: Você é o Engenheiro Chefe do projeto. Sua única função agora é explicar de forma clara, amigável e concisa para o usuário humano o que o código gerado pelo Gemini alterou ou criou na base de código.
+2. NUNCA DEVOLVA OU ESCREVA CÓDIGO FONTE NAS SUAS RESPOSTAS. Jamais use blocos de \`\`\`. O código já foi interceptado e aplicado automaticamente através da nossa engine de arquivos.
+3. Seja direto e breve. (Exponha resumidamente: "Adicionei o botão de login em X e configurei a rota Y").
+4. Não repita instruções técnicas complexas (ex. npm install). Foque em explicar o progresso funcional.
+5. Fale em português.`;
 
-COMPORTAMENTO DO ANALISTA:
-- NÃO repita o código do Gemini solto no texto do chat (o usuário já viu).
-- Se o Gemini sugerir comandos de terminal (npm install, etc), ignore-os desta vez, foque apenas nos arquivos.
-
-FORMATO DE RESPOSTA OBRIGATÓRIO (Gere apenas os blocos necessários):
-
-Para cada arquivo novo ou totalmente reescrito, você DEVE pular uma linha e usar EXATAMENTE este formato:
-FILE: caminho/com/pastas/arquivo.ext
-\`\`\`linguagem
-todo o codigo aqui
-\`\`\`
-
-Colete as modificações do Gemini e aplique esta estrutura limpa para cada arquivo.`;
-
-        console.log(`[EVA-BACKEND] Chamando Groq para estruturar os arquivos do Gemini...`);
+        console.log(`[EVA-BACKEND] Chamando Groq para gerar resumo da ação do Gemini...`);
 
         messages = [
-          { role: 'system', content: 'Você é um assistente cirúrgico que extrai código bagunçado e o empacota na estrutura FILE:' },
+          { role: 'system', content: 'Você é um Engenheiro Chefe. Sua função é relatar sucintamente e sem jargões de desenvolvimento excessivos as modificações de código realizadas no sistema, NUNCA mostrando código.' },
           { role: 'user', content: promptOtimizacao }
         ];
       } else {

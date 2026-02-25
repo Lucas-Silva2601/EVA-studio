@@ -24,6 +24,7 @@ import {
   chatToChecklistTasks,
   compareCodeChanges,
   applyImplementation,
+  suggestFilename,
   type ChatProvider
 } from "@/lib/groq";
 import { getProjectContext } from "@/lib/contextPacker";
@@ -33,6 +34,7 @@ import { waitForCodeFromExtension, FILENAME_ASK_GROQ } from "@/lib/messaging";
 import { extractRawPrompt, parseEvaActions, type EvaAction } from "@/lib/evaActions";
 import { verifyPermission } from "@/lib/fileSystem";
 import { ImplementationReview } from "@/components/layout/ImplementationReview";
+import { parseCodeBlocksFromMarkdown } from "@/lib/markdownCodeParser";
 const GEMINI_PROMPT_TEMPLATE = (userRequest: string) => `
 ESTADO ATUAL DO PROJETO E PEDIDO DO USUÁRIO:
 ${userRequest}
@@ -145,30 +147,47 @@ export function ChatSidebar() {
 
         for (const f of normalizedFiles) {
           try {
-            if (f.filePath.startsWith("file_")) continue;
+            let filePath = f.filePath;
 
-            let originalContent = "";
+            // Se o nome for genérico (ex: file_0.py, file_1.ts gerado pela extensão),
+            // tenta inferir o nome correto consultando o Groq antes de criar o arquivo.
+            if (/^file_\d+(\.\w+)?$/.test(filePath)) {
+              try {
+                const suggested = await suggestFilename(f.proposedContent);
+                if (suggested && suggested !== "index.html") {
+                  filePath = suggested;
+                  addOutputMessage({ type: "info", text: `Nome inferido pelo conteúdo: ${filePath}` });
+                } else if (!suggested) {
+                  // Não foi possível inferir — pular este arquivo
+                  addOutputMessage({ type: "warning", text: `Não foi possível determinar o nome do arquivo (conteúdo muito genérico).` });
+                  continue;
+                }
+              } catch {
+                // Fallback: usa o nome genérico se o Groq falhar
+              }
+            }
+
             let exists = true;
             try {
-              originalContent = await readFileContent(f.filePath);
+              await readFileContent(filePath);
             } catch {
               exists = false;
             }
 
             if (!exists) {
-              await createFileWithContent(f.filePath, f.proposedContent);
-              addOutputMessage({ type: "success", text: `Novo arquivo criado via AI Studio: ${f.filePath}` });
+              await createFileWithContent(filePath, f.proposedContent);
+              addOutputMessage({ type: "success", text: `Novo arquivo criado via AI Studio: ${filePath}` });
               refreshFileTree();
             } else {
               setPendingReviewActions([
                 ...(pendingReviewActions || []),
                 {
                   action: "CREATE_FILE",
-                  path: f.filePath,
+                  path: filePath,
                   content: f.proposedContent,
                 }
               ]);
-              addOutputMessage({ type: "info", text: `Edição capturada via AI Studio aguardando revisão: ${f.filePath}` });
+              addOutputMessage({ type: "info", text: `Edição capturada via AI Studio aguardando revisão: ${filePath}` });
             }
           } catch (err) {
             console.error(`Erro ao processar review do AI Studio: ${f.filePath}`, err);
@@ -181,17 +200,8 @@ export function ChatSidebar() {
         }
 
         if (isManualChat) {
-          // CHAT MANUAL: 1. Exibe a resposta BRUTA do Gemini imediatamente.
-          setMessages((prev) => [
-            ...prev,
-            {
-              role: "assistant",
-              content: rawGeminiResponse || "Resposta recebida.",
-            },
-          ]);
-
-          // 2. OTIMIZAÇÃO SILENCIOSA: Chama o Analista em background apenas para gerar o Painel de Revisão [EVA_ACTION]
-          // Não atualizamos a mensagem do chat para não "interferir" no texto que o usuário recebeu.
+          // CHAT MANUAL: Não exibe mais a resposta BRUTA do Gemini (com código) imediatamente.
+          // Em vez disso, envia ao Analista para gerar o "Resumo Executivo" e as [EVA_ACTION]
           (async () => {
             try {
               const checklistContext = await getChecklistContentForContext();
@@ -200,7 +210,7 @@ export function ChatSidebar() {
                   ? await getProjectContext(directoryHandle, fileTree)
                   : "";
 
-              addOutputMessage({ type: "info", text: "Gerando ações de revisão..." });
+              addOutputMessage({ type: "info", text: "Gerando resumo executivo das ações..." });
               const optimized = await applyImplementation({
                 userRequest: prompt,
                 geminiOutput: rawGeminiResponse,
@@ -211,6 +221,24 @@ export function ChatSidebar() {
               });
 
               if (optimized.content) {
+                // Filtra o conteúdo para o chat removendo as ações e códigos eventuais
+                const chatDisplayContent = optimized.content
+                  .split('\n')
+                  .filter(line => !line.trim().startsWith('[EVA_ACTION]'))
+                  .join('\n')
+                  .replace(/^Parecer:\s*/i, "")
+                  .replace(/```[\s\S]*?```/g, "")
+                  .trim();
+
+                // Atualiza o chat com o resumo
+                setMessages((prev) => [
+                  ...prev,
+                  {
+                    role: "assistant",
+                    content: chatDisplayContent || "Ações concluídas.",
+                  },
+                ]);
+
                 const actions = parseEvaActions(optimized.content);
                 if (actions.length > 0) {
                   // Só pede review se houver edições de arquivos existentes ou movimentações
@@ -236,16 +264,24 @@ export function ChatSidebar() {
                   } else {
                     // Se for só criação/diretório/comando, executa direto
                     await executeEvaActions(optimized.content);
-                    addOutputMessage({ type: "success", text: "Estrutura inicial implementada automaticamente." });
+                    addOutputMessage({ type: "success", text: "Estrutura implementada automaticamente." });
                   }
                 }
               }
             } catch (err) {
               console.warn("Erro na otimização silenciosa:", err);
+              // Fallback para não deixar o usuário sem resposta
+              setMessages((prev) => [
+                ...prev,
+                {
+                  role: "assistant",
+                  content: "O código foi gerado, verifique os arquivos modificados.",
+                },
+              ]);
             }
           })();
 
-          // Tenta capturar mudanças para o Code Review
+          // Tenta capturar mudanças para o Code Review (silencioso)
           await applyCodeFromResponse(rawGeminiResponse);
         } else {
           // TAREFA AUTOMÁTICA: Pós-processa o output do Gemini usando o Analista (Groq)
@@ -394,14 +430,15 @@ export function ChatSidebar() {
   };
 
   /**
-   * Função de Captura de Código para Review (IDE EVA)
-   * Detecta blocos de código e envia para a fila de revisão ou salva automaticamente.
+   * Função de Captura de Código para Review (IDE EVA).
+   * Usa o parser centralizado `parseCodeBlocksFromMarkdown` para detectar arquivos.
+   * Ele suporta o contexto antes do bloco (padrão mais comum do Gemini em PT-BR).
    */
   const applyCodeFromResponse = useCallback(
     async (responseText: string) => {
       if (!directoryHandle) return;
 
-      // Regra de Ouro: Ignora prompst de comando do sistema para evitar auto-save acidental de exemplos.
+      // Ignora prompts de sistema para evitar auto-save acidental de exemplos.
       if (
         responseText.includes("[EVA_ACTION]") ||
         responseText.includes("REGRAS DE RETORNO") ||
@@ -411,17 +448,24 @@ export function ChatSidebar() {
         return;
       }
 
+      // Usa o parser robusto centralizado que detecta nomes no contexto antes do bloco
+      const parsedFiles = parseCodeBlocksFromMarkdown(responseText);
+
+      if (parsedFiles.length === 0) return;
+
       const actionsToReview: EvaAction[] = [];
 
-      // Regex Mestre provido pelo Usuário: captura caminho limpo e o código
-      const fileRegex = /(?:FILE:|Ficheiro:|File:|\/\/|\/\*|#)\s*([a-zA-Z0-9_\-\/.]+\.[a-zA-Z0-9]+)(?:.*?)[\r\n]+\`\`\`(?:\w+)?[\r\n]([\s\S]*?)\`\`\`/g;
+      for (const parsedFile of parsedFiles) {
+        const filePath = parsedFile.name.trim();
+        const codeContent = parsedFile.content;
 
-      let match;
-      while ((match = fileRegex.exec(responseText)) !== null) {
-        const filePath = match[1].trim();
-        const codeContent = match[2];
-
-        if (!filePath || filePath.includes("caminho/do/arquivo") || filePath.toLowerCase().includes("exemplo")) continue;
+        // Ignora arquivos genéricos ou placeholders
+        if (
+          !filePath ||
+          filePath.startsWith("file_") ||
+          filePath.includes("caminho/do/arquivo") ||
+          filePath.toLowerCase().includes("exemplo")
+        ) continue;
 
         try {
           const pathNorm = filePath.replace(/\\/g, "/").replace(/^\/+/, "").trim();
@@ -436,7 +480,7 @@ export function ChatSidebar() {
           if (!exists) {
             // Arquivo novo: Auto-Save Silencioso
             await createFileWithContent(pathNorm, codeContent.trim());
-            addOutputMessage({ type: "success", text: `Novo arquivo criado via auto-save: ${pathNorm}` });
+            addOutputMessage({ type: "success", text: `Novo arquivo criado: ${pathNorm}` });
             refreshFileTree();
           } else {
             // Arquivo existente: Envia para o Modal Review Interativo
@@ -446,14 +490,12 @@ export function ChatSidebar() {
               content: codeContent.trim(),
             });
           }
-
         } catch (error) {
           console.error(`[EVA-AUTO] Erro ao processar arquivo ${filePath}:`, error);
         }
       }
 
       if (actionsToReview.length > 0) {
-        // Envia as ações pendentes para o painel de revisão e avisa o usuário
         setPendingReviewActions(actionsToReview);
         addOutputMessage({ type: "warning", text: `Substituições de arquivos aguardando sua revisão e aprovação.` });
       }
