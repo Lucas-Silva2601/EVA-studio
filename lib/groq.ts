@@ -1,6 +1,5 @@
 /**
- * Cliente do Agente Analista (Ollama) — chamadas à API via rota Next.js.
- * O Ollama roda localmente em http://localhost:11434.
+ * Cliente do Agente Analista (Groq) — chamadas à API via rota Next.js.
  */
 
 import type { ChecklistAnalysisResult, ValidationResult } from "@/types";
@@ -27,7 +26,7 @@ async function groqFetch(action: string, payload: unknown): Promise<string> {
       res.status === 404
         ? API_NOT_FOUND_MSG
         : res.status === 503
-          ? (data.error ?? "Ollama não está rodando. Inicie com: ollama serve")
+          ? (data.error ?? "Servidor Groq indisponível.")
           : res.status === 500
             ? (data.error ?? API_NOT_FOUND_MSG)
             : data.error ?? `Erro ${res.status}`;
@@ -43,7 +42,7 @@ export interface ChatResponse {
   isTruncated: boolean;
 }
 
-export type ChatProvider = "ollama";
+export type ChatProvider = "groq";
 
 async function groqFetchChat(payload: unknown, signal?: AbortSignal): Promise<ChatResponse> {
   const res = await fetch("/api/groq", {
@@ -69,7 +68,7 @@ async function groqFetchChat(payload: unknown, signal?: AbortSignal): Promise<Ch
       res.status === 404
         ? API_NOT_FOUND_MSG
         : res.status === 503
-          ? (data.error ?? "Ollama não está rodando. Inicie com: ollama serve")
+          ? (data.error ?? "Servidor Groq indisponível.")
           : res.status === 500
             ? (data.error ?? API_NOT_FOUND_MSG)
             : data.error ?? `Erro ${res.status}`;
@@ -259,4 +258,25 @@ export async function compareCodeChanges(payload: {
 export async function suggestFilename(content: string): Promise<string> {
   const result = await groqFetch("suggest_filename", { content });
   return result.trim().replace(/^["']|["']$/g, "").split("\n")[0].trim() || "index.html";
+}
+
+/**
+ * Pós-processa o output do Gemini usando o Analista para gerar as [EVA_ACTION] e o resumo.
+ * Economiza tokens ao não mandar pro Analista antes do Gemini.
+ */
+export async function applyImplementation(payload: {
+  userRequest: string;
+  geminiOutput: string;
+  projectId: string;
+  projectContext?: string | null;
+  checklistContext?: string | null;
+}): Promise<ChatResponse> {
+  return chatWithAnalyst({
+    messages: [{ role: "user", content: payload.userRequest }],
+    projectId: payload.projectId,
+    projectContext: payload.projectContext || (payload.geminiOutput ? `O Gemini retornou o seguinte código: \n${payload.geminiOutput}` : null),
+    checklistContext: payload.checklistContext,
+    // Passamos o geminiOutput no payload para que a route.ts o identifique
+    ...({ geminiOutput: payload.geminiOutput } as any),
+  });
 }

@@ -10,13 +10,16 @@ export type EvaActionDeleteFolder = { action: "DELETE_FOLDER"; path: string };
 export type EvaActionMove = { action: "MOVE_FILE"; from: string; to: string };
 /** Comando para rodar no terminal do WebContainer (ex.: npm install lodash). Requer aprovação ou envio no painel Terminal. */
 export type EvaActionRunCommand = { action: "RUN_COMMAND"; command: string };
+/** Comando para editar um arquivo existente substituindo um trecho específico. */
+export type EvaActionPatchFile = { action: "PATCH_FILE"; path: string; search: string; replace: string };
 export type EvaAction =
   | EvaActionCreateFile
   | EvaActionCreateDir
   | EvaActionDeleteFile
   | EvaActionDeleteFolder
   | EvaActionMove
-  | EvaActionRunCommand;
+  | EvaActionRunCommand
+  | EvaActionPatchFile;
 
 const EVA_ACTION_REGEX = /\[EVA_ACTION\]\s*(\{[^}]+\})/gi;
 
@@ -50,10 +53,29 @@ export function parseEvaActions(content: string): EvaAction[] {
         });
       } else if (act === "RUN_COMMAND" && typeof obj.command === "string") {
         actions.push({ action: "RUN_COMMAND", command: (obj.command as string).trim() });
+      } else if (act === "PATCH_FILE" && typeof obj.path === "string" && typeof obj.search === "string" && typeof obj.replace === "string") {
+        actions.push({
+          action: "PATCH_FILE",
+          path: (obj.path as string).trim(),
+          search: obj.search as string,
+          replace: obj.replace as string,
+        });
       }
     } catch {
       // ignorar JSON inválido
     }
   }
   return actions;
+}
+
+/**
+ * Extrai o texto puro após a tag [EVA_ACTION] quando esta não contém um JSON.
+ * Usado pelo novo backend "Mirror" para repassar o prompt do usuário diretamente ao Gemini.
+ */
+export function extractRawPrompt(content: string): string | null {
+  if (!content.includes("[EVA_ACTION]")) return null;
+  const parts = content.split("[EVA_ACTION]");
+  const lastPart = parts[parts.length - 1].trim();
+  // Remove as REGRAS (PARA O GEMINI) se presentes para enviar um prompt limpo
+  return lastPart.split("REGRAS (PARA O GEMINI):")[0].trim();
 }

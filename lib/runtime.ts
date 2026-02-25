@@ -31,7 +31,7 @@ let webContainerInstance: Awaited<ReturnType<typeof import("@webcontainer/api").
 /**
  * Inicializa o WebContainer (singleton). Exige cross-origin isolation (COOP/COEP).
  */
-async function getWebContainer(): Promise<typeof webContainerInstance> {
+export async function getWebContainer(): Promise<typeof webContainerInstance> {
   if (webContainerInstance) return webContainerInstance;
   const { WebContainer } = await import("@webcontainer/api");
   webContainerInstance = await WebContainer.boot();
@@ -64,7 +64,7 @@ export async function runNodeInWebContainer(
     const reader = process.output.getReader();
     const readOutput = (async () => {
       try {
-        for (;;) {
+        for (; ;) {
           const { done, value } = await reader.read();
           if (done) break;
           push(value ?? "", false);
@@ -303,7 +303,7 @@ async function spawnServerOnPort(
         const reader = proc.output.getReader();
         (async () => {
           try {
-            for (;;) {
+            for (; ;) {
               const { done, value } = await reader.read();
               if (done) break;
               outputChunks.push(value ?? "");
@@ -318,7 +318,7 @@ async function spawnServerOnPort(
           if (code !== 0 && !resolved) {
             doReject(new Error(`Servidor encerrou com código ${code}.${getStderrSuffix()}`));
           }
-        }).catch(() => {});
+        }).catch(() => { });
       })
       .catch((err) => {
         doReject(new Error(`${(err as Error).message}${getStderrSuffix()}`));

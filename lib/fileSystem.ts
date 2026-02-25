@@ -7,7 +7,38 @@
  */
 
 import type { FileNode } from "@/types";
-import { normalizeTaskLine, stripMarkdownFormatting } from "@/lib/checklistPhase";
+
+/**
+ * Converte um caminho string em partes normalizadas (remove barras extras, converte \ para /).
+ */
+function normalizePathParts(path: string): string[] {
+  return path
+    .replace(/\\/g, "/")
+    .split("/")
+    .filter(Boolean);
+}
+
+/**
+ * Normaliza uma linha do checklist para comparação (remove espaços, markdown e converte para lowercase).
+ */
+function normalizeTaskLine(line: string): string {
+  return line
+    .replace(/^\s*[-–—−]\s*\[\s*[ xX]\s*\]\s*/i, "") // Remove checkbox
+    .replace(/[\[\]\(\)\*\_]/g, "") // Remove markdown
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
+/**
+ * Remove formatação markdown pesada de um texto para comparação fuzzy.
+ */
+function stripMarkdownFormatting(text: string): string {
+  return text
+    .replace(/[`*_~]/g, "")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1") // Links
+    .trim();
+}
 
 /** Pastas ignoradas na listagem (configurável). */
 export const DEFAULT_IGNORE_DIRS = [
@@ -105,13 +136,12 @@ export async function readFileContent(
   const hasPermission = await verifyPermission(rootHandle, false);
   if (!hasPermission) throw new Error("Permissão de leitura negada.");
 
-  const parts = relativePath.replace(/^\//, "").split("/");
+  const parts = normalizePathParts(relativePath);
   if (parts.length === 0) throw new Error("Caminho inválido");
 
   let current: FileSystemHandle = rootHandle;
   for (let i = 0; i < parts.length - 1; i++) {
-    const dir = await (current as FileSystemDirectoryHandle).getDirectoryHandle(parts[i]);
-    current = dir;
+    current = await (current as FileSystemDirectoryHandle).getDirectoryHandle(parts[i]);
   }
   const fileName = parts[parts.length - 1];
   const fileHandle = await (current as FileSystemDirectoryHandle).getFileHandle(fileName);
@@ -132,12 +162,12 @@ export async function writeFileContent(
   const hasPermission = await verifyPermission(rootHandle, true);
   if (!hasPermission) throw new Error("Permissão de escrita necessária. Clique na tela e tente novamente.");
 
-  const parts = relativePath.replace(/^\//, "").split("/");
+  const parts = normalizePathParts(relativePath);
   if (parts.length === 0) throw new Error("Caminho inválido");
 
   let current = rootHandle;
   for (let i = 0; i < parts.length - 1; i++) {
-    current = await current.getDirectoryHandle(parts[i]);
+    current = await current.getDirectoryHandle(parts[i], { create: true });
   }
   const fileName = parts[parts.length - 1];
   const fileHandle = await current.getFileHandle(fileName);
@@ -147,29 +177,45 @@ export async function writeFileContent(
 }
 
 /**
- * Cria um novo arquivo (e pastas intermediárias se necessário) com o conteúdo dado.
+ * Cria um novo arquivo (e todas as pastas intermediárias) com o conteúdo dado.
+ * Implementação recursiva robusta via File System Access API.
  */
 export async function createFileWithContent(
   rootHandle: FileSystemDirectoryHandle,
   relativePath: string,
   content: string
 ): Promise<void> {
-  // VERIFICAÇÃO DE PERMISSÃO DE ESCRITA ADICIONADA
   const hasPermission = await verifyPermission(rootHandle, true);
-  if (!hasPermission) throw new Error("Permissão de escrita necessária. Clique na tela e tente novamente.");
+  if (!hasPermission) throw new Error("Permissão de escrita necessária para criar arquivo.");
 
-  const parts = relativePath.replace(/^\//, "").split("/");
-  if (parts.length === 0) throw new Error("Caminho inválido");
+  // Normaliza o caminho: src/components/Header.tsx -> ["src", "components", "Header.tsx"]
+  const parts = normalizePathParts(relativePath);
+  if (parts.length === 0) throw new Error("Caminho de arquivo inválido.");
 
-  let current = rootHandle;
-  for (let i = 0; i < parts.length - 1; i++) {
-    current = await current.getDirectoryHandle(parts[i], { create: true });
-  }
+  let currentHandle = rootHandle;
+  const folderParts = parts.slice(0, -1);
   const fileName = parts[parts.length - 1];
-  const fileHandle = await current.getFileHandle(fileName, { create: true });
-  const writable = await fileHandle.createWritable();
-  await writable.write(content);
-  await writable.close();
+
+  // Garante a existência de cada pasta na hierarquia
+  for (const folderName of folderParts) {
+    try {
+      currentHandle = await currentHandle.getDirectoryHandle(folderName, { create: true });
+    } catch (err) {
+      console.error(`Erro ao garantir diretório "${folderName}" em "${relativePath}":`, err);
+      throw new Error(`Não foi possível criar a pasta "${folderName}". Verifique as permissões do sistema.`);
+    }
+  }
+
+  // Com a estrutura garantida, cria ou abre o arquivo
+  try {
+    const fileHandle = await currentHandle.getFileHandle(fileName, { create: true });
+    const writable = await fileHandle.createWritable();
+    await writable.write(content);
+    await writable.close();
+  } catch (err) {
+    console.error(`Erro ao escrever no arquivo "${fileName}":`, err);
+    throw new Error(`Falha ao salvar o arquivo "${fileName}". O arquivo pode estar aberto em outro programa.`);
+  }
 }
 
 /**
@@ -183,7 +229,7 @@ export async function createDirectory(
   const hasPermission = await verifyPermission(rootHandle, true);
   if (!hasPermission) throw new Error("Permissão de escrita necessária.");
 
-  const parts = relativePath.replace(/^\//, "").split("/").filter(Boolean);
+  const parts = normalizePathParts(relativePath);
   if (parts.length === 0) throw new Error("Caminho inválido");
 
   let current = rootHandle;
@@ -478,9 +524,9 @@ export async function deleteFile(
   const hasPermission = await verifyPermission(rootHandle, true);
   if (!hasPermission) throw new Error("Permissão de escrita necessária.");
 
-  const path = relativePath.replace(/^\//, "").trim();
-  if (!path) throw new Error("Caminho inválido");
-  const parts = path.split("/");
+  const parts = normalizePathParts(relativePath);
+  if (parts.length === 0) throw new Error("Caminho inválido");
+
   if (parts.length === 1) {
     await rootHandle.removeEntry(parts[0]);
     return;
@@ -504,9 +550,9 @@ export async function deleteDirectory(
   const hasPermission = await verifyPermission(rootHandle, true);
   if (!hasPermission) throw new Error("Permissão de escrita necessária.");
 
-  const path = relativePath.replace(/^\//, "").trim();
-  if (!path) throw new Error("Caminho inválido");
-  const parts = path.split("/");
+  const parts = normalizePathParts(relativePath);
+  if (parts.length === 0) throw new Error("Caminho inválido");
+
   if (parts.length === 1) {
     await rootHandle.removeEntry(parts[0], { recursive: true });
     return;
@@ -519,14 +565,108 @@ export async function deleteDirectory(
 }
 
 /**
- * Move um arquivo (lê, cria no destino, remove na origem) para comandos EVA_ACTION do Groq.
+ * Move um arquivo ou pasta para um novo local.
+ * Se for pasta, move recursivamente.
+ */
+export async function moveEntry(
+  rootHandle: FileSystemDirectoryHandle,
+  fromPath: string,
+  toPath: string
+): Promise<void> {
+  const fromParts = fromPath.replace(/^\//, "").split("/").filter(Boolean);
+  const toParts = toPath.replace(/^\//, "").split("/").filter(Boolean);
+  if (fromParts.length === 0 || toParts.length === 0) throw new Error("Caminho inválido");
+
+  // Verificar se a origem existe e se é arquivo ou pasta
+  let fromParent = rootHandle;
+  for (let i = 0; i < fromParts.length - 1; i++) {
+    fromParent = await fromParent.getDirectoryHandle(fromParts[i]);
+  }
+  const fromName = fromParts[fromParts.length - 1];
+
+  let isDirectory = false;
+  try {
+    await fromParent.getDirectoryHandle(fromName);
+    isDirectory = true;
+  } catch {
+    // É arquivo ou não existe (o readFileContent falhará se não existir)
+  }
+
+  if (isDirectory) {
+    await copyDirectory(rootHandle, fromPath, toPath);
+    await deleteDirectory(rootHandle, fromPath);
+  } else {
+    const content = await readFileContent(rootHandle, fromPath);
+    await createFileWithContent(rootHandle, toPath, content);
+    await deleteFile(rootHandle, fromPath);
+  }
+}
+
+/**
+ * Atalho para renomear: move para o mesmo diretório com novo nome.
+ */
+export async function renameEntry(
+  rootHandle: FileSystemDirectoryHandle,
+  oldPath: string,
+  newName: string
+): Promise<string> {
+  const parts = oldPath.replace(/^\//, "").split("/").filter(Boolean);
+  parts[parts.length - 1] = newName;
+  const newPath = parts.join("/");
+  await moveEntry(rootHandle, oldPath, newPath);
+  return newPath;
+}
+
+/**
+ * Cópia recursiva de pastas (auxiliar para moveEntry).
+ */
+async function copyDirectory(
+  rootHandle: FileSystemDirectoryHandle,
+  fromPath: string,
+  toPath: string
+): Promise<void> {
+  await createDirectory(rootHandle, toPath);
+  const fromParts = fromPath.replace(/^\//, "").split("/").filter(Boolean);
+  let fromHandle = rootHandle;
+  for (const part of fromParts) {
+    fromHandle = await fromHandle.getDirectoryHandle(part);
+  }
+
+  for await (const [name, handle] of fromHandle.entries()) {
+    const subFrom = `${fromPath}/${name}`;
+    const subTo = `${toPath}/${name}`;
+    if (handle.kind === "directory") {
+      await copyDirectory(rootHandle, subFrom, subTo);
+    } else {
+      const content = await readFileContent(rootHandle, subFrom);
+      await createFileWithContent(rootHandle, subTo, content);
+    }
+  }
+}
+
+/**
+ * Move um arquivo (lê, cria no destino, remove na origem) - Legado para EVA_ACTION.
  */
 export async function moveFile(
   rootHandle: FileSystemDirectoryHandle,
   fromPath: string,
   toPath: string
 ): Promise<void> {
-  const content = await readFileContent(rootHandle, fromPath);
-  await createFileWithContent(rootHandle, toPath, content);
-  await deleteFile(rootHandle, fromPath);
+  await moveEntry(rootHandle, fromPath, toPath);
+}
+/**
+ * Aplica um patch em um arquivo existente, substituindo um trecho de texto por outro.
+ */
+export async function patchFileContents(
+  rootHandle: FileSystemDirectoryHandle,
+  relativePath: string,
+  search: string,
+  replace: string
+): Promise<void> {
+  const content = await readFileContent(rootHandle, relativePath);
+  if (!content.includes(search)) {
+    throw new Error(`Padrão de busca não encontrado no arquivo: ${relativePath}`);
+  }
+  const newContent = content.replace(search, replace);
+  await writeFileContent(rootHandle, relativePath, newContent);
 }

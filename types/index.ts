@@ -62,26 +62,5 @@ export interface ValidationResult {
 export type LoopStatus =
   | "idle"
   | "validating"
-  | "error"
-  | "awaiting_review";
+  | "error";
 
-/** Um arquivo em revisão (diff). */
-export interface PendingDiffFile {
-  filePath: string;
-  beforeContent: string | null;
-  afterContent: string;
-}
-
-/** Fase 9/10: Pendência de revisão humana antes de salvar arquivo(s) gerado(s) pela IA. */
-export interface PendingDiffReview {
-  /** Lista de arquivos (Fase 10: múltiplos; Fase 9: um único). */
-  files: PendingDiffFile[];
-  /** Descrição da tarefa do checklist (para validação após aceitar). */
-  taskDescription: string;
-  /** Resultado da análise (para atualizar checklist após aceitar). Obrigatório quando origem é loop; vazio quando origem é chat. */
-  checklistResult: ChecklistAnalysisResult;
-  /** true quando a sugestão veio do chat (Implementar); nesse caso não valida checklist. */
-  fromChat?: boolean;
-  /** Linhas do checklist a marcar [x] em massa (Entrega de Fase). */
-  phaseLines?: string[];
-}

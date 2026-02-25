@@ -17,21 +17,6 @@ const ChatPanel = dynamic(
   { ssr: false, loading: () => <ChatPanelSkeleton /> }
 );
 
-const DiffReviewModal = dynamic(
-  () => import("@/components/layout/DiffReviewModal").then((m) => ({ default: m.DiffReviewModal })),
-  { ssr: false }
-);
-
-const DeletionModal = dynamic(
-  () => import("@/components/layout/DeletionModal").then((m) => ({ default: m.DeletionModal })),
-  { ssr: false }
-);
-
-const GenesisQueuePanel = dynamic(
-  () => import("@/components/layout/GenesisQueuePanel").then((m) => ({ default: m.GenesisQueuePanel })),
-  { ssr: false }
-);
-
 function EditorAreaSkeleton() {
   return (
     <div
@@ -53,17 +38,6 @@ function ChatPanelSkeleton() {
     >
       <span aria-hidden>Carregando chat...</span>
     </div>
-  );
-}
-
-function LazyModals() {
-  const { pendingDiffReview, pendingDeletionQueue, genesisQueue } = useIdeState();
-  return (
-    <>
-      {pendingDiffReview != null && <DiffReviewModal />}
-      {pendingDeletionQueue.length > 0 && <DeletionModal />}
-      {genesisQueue != null && genesisQueue.length > 0 && <GenesisQueuePanel />}
-    </>
   );
 }
 
@@ -91,7 +65,6 @@ export default function HomePage() {
             </div>
             <ChatPanel />
           </main>
-          <LazyModals />
         </div>
       </IdeStateProvider>
     </ThemeProvider>

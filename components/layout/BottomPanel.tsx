@@ -22,7 +22,14 @@ export function BottomPanel() {
     "left",
     "eva-terminal-height"
   );
-  const { outputMessages, clearOutput, pendingTerminalCommands, clearPendingTerminalCommands } = useIdeState();
+  const {
+    outputMessages,
+    clearOutput,
+    pendingTerminalCommands,
+    clearPendingTerminalCommands,
+    runStatus,
+    runTerminalCommand
+  } = useIdeState();
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -134,9 +141,21 @@ export function BottomPanel() {
                 <p className="text-sm font-medium text-ds-text-primary-light dark:text-ds-text-primary mb-1">
                   Comandos sugeridos pela IA (execute no terminal na pasta do projeto):
                 </p>
-                <ul className="list-disc list-inside text-sm text-ds-text-secondary-light dark:text-ds-text-secondary space-y-0.5 mb-2">
+                <ul className="list-inside text-sm text-ds-text-secondary-light dark:text-ds-text-secondary space-y-1.5 mb-2">
                   {pendingTerminalCommands.map((cmd, i) => (
-                    <li key={i} className="font-mono">{cmd}</li>
+                    <li key={i} className="flex items-center justify-between gap-4 group">
+                      <code className="font-mono bg-ds-surface-hover-light dark:bg-ds-surface-hover px-1.5 py-0.5 rounded text-xs flex-1 break-all">
+                        {cmd}
+                      </code>
+                      <button
+                        type="button"
+                        onClick={() => runTerminalCommand(cmd)}
+                        disabled={runStatus === "running"}
+                        className="shrink-0 text-[10px] uppercase tracking-wider font-bold px-2 py-1 rounded bg-ds-accent-light/20 dark:bg-ds-accent-neon/20 text-ds-accent-light dark:text-ds-accent-neon hover:bg-ds-accent-light dark:hover:bg-ds-accent-neon hover:text-white dark:hover:text-black transition-colors disabled:opacity-50"
+                      >
+                        {runStatus === "running" ? "Rodando..." : "Executar"}
+                      </button>
+                    </li>
                   ))}
                 </ul>
                 <button

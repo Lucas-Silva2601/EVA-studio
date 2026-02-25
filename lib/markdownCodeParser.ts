@@ -9,10 +9,10 @@ export interface ParsedCodeFile {
 }
 
 /** Regex rigoroso: FILE: ou // FILE: seguido de caminho/nome.ext (evita fallback para file_0.txt). */
-const FILENAME_COMMENT_REGEX = /^\s*(?:\/\/|#|<!--)?\s*(?:filename|FILE)\s*:\s*([^\s\n]+)(?:\s*-->)?/im;
+const FILENAME_COMMENT_REGEX = /^\s*(?:\/\/|#|<!--|\/\*)?\s*(?:filename|FILE|Arquivo|Caminho)\s*:\s*([a-zA-Z0-9._\-/]+)(?:\s*-->|\s*\*\/)?/im;
 
-/** Regex robusto: FILE: path em qualquer lugar do texto (apenas caracteres seguros para nome de arquivo). */
-export const FILE_PATH_FULL_TEXT_REGEX = /FILE:\s*([a-zA-Z0-9._\-/]+)/gi;
+/** Regex robusto: FILE: ou Caminho: ou Arquivo: path em qualquer lugar do texto. */
+export const FILE_PATH_FULL_TEXT_REGEX = /(?:FILE|Caminho|Arquivo|filename)\s*:\s*([a-zA-Z0-9._\-/]+)/gi;
 
 /** Extrai path procurando FILE: em TODO o texto (primeira ocorrência). Evita arquivos .txt genéricos. */
 export function extractFilePathFromFullText(text: string): string | null {
@@ -21,14 +21,14 @@ export function extractFilePathFromFullText(text: string): string | null {
   const match = trimmed.match(FILE_PATH_FULL_TEXT_REGEX);
   if (match && match[0]) {
     const first = match[0];
-    const pathMatch = first.match(/FILE:\s*([a-zA-Z0-9._\-/]+)/i);
+    const pathMatch = first.match(/(?:FILE|Caminho|Arquivo|filename)\s*:\s*([a-zA-Z0-9._\-/]+)/i);
     if (pathMatch) return pathMatch[1].trim();
   }
   return null;
 }
 
-/** Regex robusto para primeira/segunda linha: FILE: path (apenas caracteres seguros para nome de arquivo). */
-export const FILE_PATH_FIRST_LINES_REGEX = /FILE:\s*([a-zA-Z0-9._\-/]+)/i;
+/** Regex robusto para primeira/segunda linha: FILE: ou filename: path. */
+export const FILE_PATH_FIRST_LINES_REGEX = /(?:FILE|filename|Caminho|Arquivo)\s*:\s*([a-zA-Z0-9._\-/]+)/i;
 
 /** Extrai path da primeira ou segunda linha com FILE: (ex.: FILE: index.html). Usado pelo listener da extensão. */
 export function extractFilePathFromFirstTwoLines(text: string): string | null {
@@ -54,7 +54,7 @@ export function extractFilePathStrict(text: string): string | null {
   const lines = trimmed.split(/\r?\n/);
   for (let i = 0; i < Math.min(lines.length, 5); i++) {
     const line = lines[i]?.trim() ?? "";
-    const match = line.match(/^(?:\/\/\s*)?FILE\s*:\s*(.+)$/i);
+    const match = line.match(/^(?:\/\/|#|--|\/\*)\s*(?:FILE|filename|Caminho|Arquivo)\s*:\s*(.+?)(?:\s*\*\/)?$/i);
     if (match) return match[1].trim();
   }
   return null;
@@ -67,34 +67,29 @@ export function extractFilePathStrict(text: string): string | null {
 export function inferFilenameFromContent(content: string): string | null {
   const trimmed = content.trim();
   if (!trimmed) return null;
-  const first = trimmed.slice(0, 400).toLowerCase();
-  if (first.includes("<!doctype") || first.startsWith("<html") || first.startsWith("<!DOCTYPE")) return "index.html";
-  // CSS: <style ou padrão { prop: valor } com unidades/propriedades típicas (px, em, rem, %, color:, margin:, etc.)
-  const hasBracesAndColon = first.includes("{") && first.includes(":");
-  const hasCssHint =
-    first.includes("<style") ||
-    first.includes("px") ||
-    first.includes("em") ||
-    first.includes("rem") ||
-    /\d\s*%/.test(first) ||
-    first.includes("color:") ||
-    first.includes("margin:") ||
-    first.includes("padding:") ||
-    first.includes("font-size:") ||
-    first.includes("width:") ||
-    first.includes("height:") ||
-    first.includes("background") ||
-    first.includes("border:") ||
-    first.includes("display:");
-  const hasJsHint =
-    first.includes("function ") || first.includes("=>") || first.includes("const ") || first.includes("export ");
-  if (hasCssHint && (first.includes("<style") || (hasBracesAndColon && !hasJsHint))) return "style.css";
-  if (first.includes("import react") || first.includes("from \"react\"") || first.includes("from 'react'")) return "App.jsx";
-  if (first.includes("function ") || (first.includes("const ") && first.includes("=>")) || first.includes("export "))
+  const first = trimmed.slice(0, 500); // Aumentado range para detecção Python
+  const firstLower = first.toLowerCase();
+
+  // Python: checar primeiro 'def ' ou 'import ' (comum em muitos mas prioritário se for .py)
+  if (firstLower.includes("def ") || firstLower.includes("import ursina") || (firstLower.includes("import ") && !firstLower.includes("from \"react\"") && !firstLower.includes("from 'react'"))) {
+    return "script.py";
+  }
+
+  if (firstLower.includes("<!doctype") || firstLower.startsWith("<html") || firstLower.startsWith("<!DOCTYPE")) return "index.html";
+
+  // CSS
+  const hasBracesAndColon = firstLower.includes("{") && firstLower.includes(":");
+  const hasCssHint = firstLower.includes("<style") || firstLower.includes("px") || firstLower.includes("em") || firstLower.includes("rem") || /\d\s*%/.test(firstLower) || firstLower.includes("color:") || firstLower.includes("margin:") || firstLower.includes("padding:") || firstLower.includes("font-size:") || firstLower.includes("width:") || firstLower.includes("height:") || firstLower.includes("background") || firstLower.includes("border:") || firstLower.includes("display:");
+  const hasJsHint = firstLower.includes("function ") || firstLower.includes("=>") || firstLower.includes("const ") || firstLower.includes("export ");
+  if (hasCssHint && (firstLower.includes("<style") || (hasBracesAndColon && !hasJsHint))) return "style.css";
+
+  if (firstLower.includes("import react") || firstLower.includes("from \"react\"") || firstLower.includes("from 'react'")) return "App.jsx";
+
+  if (firstLower.includes("function ") || (firstLower.includes("const ") && firstLower.includes("=>")) || firstLower.includes("export "))
     return "script.js";
-  if (first.includes("def ") || (first.includes("import ") && !first.includes("react"))) return "script.py";
-  if (first.startsWith("{") || first.startsWith("[")) return "data.json";
-  if (first.startsWith("# ") || first.includes("## ") || first.includes("- [ ]") || first.includes("- [x]"))
+
+  if (firstLower.startsWith("{") || firstLower.startsWith("[")) return "data.json";
+  if (firstLower.startsWith("# ") || firstLower.includes("## ") || firstLower.includes("- [ ]") || firstLower.includes("- [x]"))
     return "checklist.md";
   return null;
 }
@@ -186,7 +181,21 @@ export function parseCodeBlocksFromMarkdown(text: string): ParsedCodeFile[] {
     } else {
       const fallback = extractFilePathStrict(content) ?? inferFilenameFromContent(content);
       const ext = langToExt(infoLang);
-      name = fallback ?? (ext ? `file_${index}.${ext}` : `file_${index}`);
+      if (fallback) {
+        // Se temos um fallback mas NÃO tem extensão (detectou apenas nome), ou se a extensão do fallback conflita com lang tag
+        const parts = fallback.split(".");
+        const fallbackExt = parts.length > 1 ? parts.pop()?.toLowerCase() : null;
+        if (!fallbackExt && ext) {
+          name = `${fallback}.${ext}`;
+        } else if (fallbackExt && ext && fallbackExt !== ext && (ext === "py" || ext === "js" || ext === "html" || ext === "css")) {
+          // Prioridade para a etiqueta de linguagem do Markdown se for algo explícito
+          name = fallback.substring(0, fallback.lastIndexOf(".")) + "." + ext;
+        } else {
+          name = fallback;
+        }
+      } else {
+        name = ext ? `file_${index}.${ext}` : `file_${index}`;
+      }
       content = stripFilenameComment(content);
       index++;
     }

@@ -7,7 +7,6 @@ import type {
   OutputMessage,
   ValidationResult,
   LoopStatus,
-  PendingDiffReview,
 } from "@/types";
 import {
   listDirectoryRecursive,
@@ -19,13 +18,16 @@ import {
   deleteFile as deleteFileFs,
   deleteDirectory as deleteDirectoryFs,
   moveFile as moveFileFs,
+  renameEntry as renameEntryFs,
+  moveEntry as moveEntryFs,
   ensureChecklistExists,
   readChecklist as readChecklistFs,
   writeChecklist as writeChecklistFs,
   updateChecklistOnDisk,
   isFileSystemAccessSupported,
+  patchFileContents,
 } from "@/lib/fileSystem";
-import { parseEvaActions } from "@/lib/evaActions";
+import { parseEvaActions, type EvaAction } from "@/lib/evaActions";
 import { getLanguageFromFilename } from "@/lib/utils";
 import {
   analyzeChecklist as analyzeChecklistGroq,
@@ -47,15 +49,10 @@ import {
   getWebContainerUnavailableReason,
   startWebContainerServer,
   updateWebContainerFiles,
+  getWebContainer,
   type WebContainerFile,
 } from "@/lib/runtime";
 import { reportErrorToAnalyst } from "@/lib/groq";
-import {
-  applyAllPhaseCompletions,
-  replaceTaskLineWithCompleted,
-  findTasksMatchingHints,
-  findTasksMatchingSavedFiles,
-} from "@/lib/checklistPhase";
 import { getFilePathsFromTree } from "@/lib/contextPacker";
 
 /** Handle do diretório raiz (File System Access API). */
@@ -111,37 +108,12 @@ interface IdeStateContextValue {
   loopStatus: LoopStatus;
   /** Remove o handle persistido (IndexedDB) e limpa a pasta atual (Fase 7). */
   forgetStoredDirectory: () => Promise<void>;
-  /** Abre o modal de diff com uma sugestão do chat (botão "Implementar Mudanças"). */
-  proposeChangeFromChat: (filePath: string, proposedContent: string) => Promise<void>;
-  /** Abre o modal de diff com múltiplos arquivos (Entrega de Fase); opcionalmente marca phaseLines [x] ao aceitar. */
-  proposeChangesFromChat: (
-    files: Array<{ filePath: string; proposedContent: string }>,
-    options?: { phaseLines?: string[] }
-  ) => Promise<void>;
   /** Fase 8: Estado da execução do arquivo (idle | running). */
   runStatus: "idle" | "running";
   /** Fase 8: Executa o arquivo atualmente ativo (Node no WebContainer ou Python no Pyodide); saída no Output. */
   runCurrentFile: () => Promise<void>;
-  /** Fase 9: Pendência de revisão (diff) antes de salvar arquivo gerado pela IA. */
-  pendingDiffReview: PendingDiffReview | null;
-  /** Fase 9: Aceitar conteúdo e gravar no disco; em seguida validar e atualizar checklist. */
-  acceptDiffReview: (finalContent?: string) => Promise<void>;
-  /** Fase 9: Rejeitar alterações; descarta e volta ao idle (incrementa contador de falhas). */
-  rejectDiffReview: () => void;
-  /** Fase 9/10: Atualizar conteúdo em revisão por path do arquivo (edição manual). */
-  updatePendingDiffContent: (filePath: string, content: string) => void;
   /** Fase 9: Contador de falhas consecutivas na mesma tarefa (para detecção de loop). */
   consecutiveFailures: number;
-  /** Fase 9: Chave da tarefa atual (para reset ao mudar de tarefa). */
-  currentTaskKey: string | null;
-  /** Fase 12 (Autocura): Sugestão de correção após erro de execução; Chat consome e exibe com "Aplicar Autocura". */
-  pendingAutocura: { content: string } | null;
-  setPendingAutocura: (v: { content: string } | null) => void;
-  /** Fase 14 (Gênesis): Fila de arquivos planejados pela IA para criação/alteração em lote. */
-  genesisQueue: Array<{ path: string; content: string }> | null;
-  setGenesisQueue: (v: Array<{ path: string; content: string }> | null) => void;
-  /** Executa a fila Gênesis: cria ou sobrescreve cada arquivo e limpa a fila. */
-  executeGenesisQueue: () => Promise<void>;
   /** Tarefa do checklist que está sendo implementada (para marcar [x] ao aceitar diff do chat). */
   currentChecklistTask: { taskLine: string; taskDescription: string } | null;
   setCurrentChecklistTask: (v: { taskLine: string; taskDescription: string } | null) => void;
@@ -161,18 +133,9 @@ interface IdeStateContextValue {
   getNextTaskFromContent: (checklistContent: string) => Promise<{ taskLine: string; taskDescription: string } | null>;
   /** Obtém TODAS as tarefas pendentes de uma fase (para "implementar fase N"). */
   getTasksForPhase: (checklistContent: string, phaseNumber: number) => Promise<Array<{ taskLine: string; taskDescription: string }>>;
-  /** Linhas do checklist da fase atual (Entrega de Fase); usadas ao clicar em "Implementar" em mensagem multi-arquivo. */
-  currentPhaseLines: string[] | null;
-  setCurrentPhaseLines: (v: string[] | null) => void;
-  /** Executa comandos EVA_ACTION. Criação (CREATE_FILE, CREATE_DIRECTORY) é silenciosa; deleção (DELETE_*) exige aprovação no DeletionModal. */
+  /** Executa comandos EVA_ACTION. Criação (CREATE_FILE, CREATE_DIRECTORY) é silenciosa. */
   executeEvaActions: (content: string) => Promise<void>;
-  /** Fila de deleções pendentes de aprovação (Analista solicitou; usuário deve clicar "Apagar" no modal). */
-  pendingDeletionQueue: Array<{ kind: "file" | "folder"; path: string }>;
-  /** Confirma a deleção do primeiro item da fila (apaga no disco, atualiza árvore e checklist). */
-  approvePendingDeletion: () => Promise<void>;
-  /** Descarta o primeiro item da fila sem apagar. */
-  rejectPendingDeletion: () => void;
-  /** Registra callback chamado após o checklist ser atualizado (ex.: aceitar diff). Retorna função para desregistrar. */
+  /** Registra callback chamado após o checklist ser atualizado. Retorna função para desregistrar. */
   onChecklistUpdated: (fn: () => void) => () => void;
   /** Live Preview: URL do servidor no WebContainer (null quando inativo). */
   previewUrl: string | null;
@@ -182,13 +145,24 @@ interface IdeStateContextValue {
   stopLivePreview: () => void;
   /** Atualiza arquivos no WebContainer (hot reload quando preview ativo). */
   refreshPreviewFiles: () => Promise<void>;
-  /** Comandos sugeridos pela IA para rodar no terminal (ex.: npm install lodash). Exibidos no Output; usuário pode executar na pasta do projeto ou no Terminal quando disponível. */
+  /** Comandos sugeridos pela IA para rodar no terminal (ex.: npm install lodash). */
   pendingTerminalCommands: string[];
   /** Limpa a fila de comandos sugeridos pela IA. */
   clearPendingTerminalCommands: () => void;
+  /** Ações do Analista [EVA_ACTION] aguardando revisão do usuário. */
+  pendingReviewActions: EvaAction[] | null;
+  /** Define as ações pendentes para revisão. */
+  setPendingReviewActions: (actions: EvaAction[] | null) => void;
+  /** Executa um comando arbitrário no terminal (Node ou Python). */
+  runTerminalCommand: (command: string) => Promise<void>;
   /** Solicita explicitamente permissão de escrita (deve ser chamado em clique). */
   requestWritePermission: () => Promise<boolean>;
+  /** Renomeia um arquivo ou pasta. */
+  renameEntryInProject: (oldPath: string, newName: string) => Promise<void>;
+  /** Move um arquivo ou pasta para um novo destino. */
+  moveEntryInProject: (fromPath: string, toPath: string) => Promise<void>;
 }
+
 
 const IdeStateContext = createContext<IdeStateContextValue | null>(null);
 
@@ -201,12 +175,7 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
   const [folderName, setFolderName] = useState<string | null>(null);
   const [loopStatus, setLoopStatus] = useState<LoopStatus>("idle");
   const [runStatus, setRunStatus] = useState<"idle" | "running">("idle");
-  const [restoreAttempted, setRestoreAttempted] = useState(false);
-  const [pendingDiffReview, setPendingDiffReview] = useState<PendingDiffReview | null>(null);
-  const [currentTaskKey, setCurrentTaskKey] = useState<string | null>(null);
   const [consecutiveFailures, setConsecutiveFailures] = useState(0);
-  const [pendingAutocura, setPendingAutocura] = useState<{ content: string } | null>(null);
-  const [genesisQueue, setGenesisQueue] = useState<Array<{ path: string; content: string }> | null>(null);
   const [currentChecklistTask, setCurrentChecklistTask] = useState<{
     taskLine: string;
     taskDescription: string;
@@ -216,24 +185,24 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
     taskDescription: string;
   } | null>(null);
   const [loopAutoRunning, setLoopAutoRunning] = useState(false);
-  const [currentPhaseLines, setCurrentPhaseLines] = useState<string[] | null>(null);
-  /** Fila de deleções solicitadas pelo Analista; aguardam aprovação no DeletionModal. */
-  const [pendingDeletionQueue, setPendingDeletionQueue] = useState<Array<{ kind: "file" | "folder"; path: string }>>([]);
   /** Comandos sugeridos pela IA para rodar no terminal (RUN_COMMAND). */
   const [pendingTerminalCommands, setPendingTerminalCommands] = useState<string[]>([]);
+  const [pendingReviewActions, setPendingReviewActions] = useState<EvaAction[] | null>(null);
+
+  const restoreAttemptedRef = useRef(false);
   /** Live Preview: URL do servidor estático no WebContainer. */
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const checklistUpdatedListenersRef = useRef<Set<() => void>>(new Set());
 
   const onChecklistUpdated = useCallback((fn: () => void) => {
     checklistUpdatedListenersRef.current.add(fn);
-    return () => {
-      checklistUpdatedListenersRef.current.delete(fn);
-    };
+    return () => checklistUpdatedListenersRef.current.delete(fn);
   }, []);
+
   const notifyChecklistUpdated = useCallback(() => {
     checklistUpdatedListenersRef.current.forEach((f) => f());
   }, []);
+
   const addOutputMessage = useCallback(
     (msg: Omit<OutputMessage, "id" | "timestamp">) => {
       setOutputMessages((prev) => [
@@ -244,15 +213,14 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
-  const requestWritePermission = useCallback(async (): Promise<boolean> => {
+  const requestWritePermission = useCallback(async () => {
     if (!directoryHandle) return false;
-    const ok = await requestDirectoryPermission(directoryHandle, "readwrite");
+    const ok = await requestDirectoryPermission(directoryHandle);
     if (ok) {
       addOutputMessage({ type: "success", text: "Permissão de escrita concedida." });
     }
     return ok;
   }, [directoryHandle, addOutputMessage]);
-
   /** Extensões de arquivos servíveis no Live Preview. */
   const PREVIEW_EXTENSIONS = new Set([
     "html", "htm", "css", "js", "jsx", "ts", "tsx", "mjs", "cjs", "json", "md", "txt", "svg", "xml",
@@ -422,8 +390,8 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
 
   // Restaura pasta salva após primeiro paint (não bloqueia inicialização)
   useEffect(() => {
-    if (typeof window === "undefined" || !isFileSystemAccessSupported() || restoreAttempted) return;
-    setRestoreAttempted(true);
+    if (typeof window === "undefined" || !isFileSystemAccessSupported() || restoreAttemptedRef.current) return;
+    restoreAttemptedRef.current = true;
     const runRestore = () => {
       getDirectoryHandle()
         .then(async (handle) => {
@@ -460,7 +428,7 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
     } else {
       setTimeout(runRestore, 0);
     }
-  }, [addOutputMessage, restoreAttempted]);
+  }, [addOutputMessage]);
 
   const forgetStoredDirectory = useCallback(async () => {
     await clearDirectoryHandle();
@@ -522,10 +490,7 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
             fileContent: file.content,
             projectId: folderName ?? undefined,
           });
-          setPendingAutocura({
-            content: "🚨 Erro Detectado! EVA sugere esta correção:\n\n" + suggestion,
-          });
-          addOutputMessage({ type: "info", text: "Sugestão de autocura enviada ao Chat. Veja o painel direito." });
+          addOutputMessage({ type: "info", text: `🚨 Sugestão do Analista:\n\n${suggestion}` });
         } catch {
           addOutputMessage({ type: "warning", text: "Não foi possível obter sugestão do Analista." });
         }
@@ -563,12 +528,14 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
   const writeFileContent = useCallback(
     async (relativePath: string, content: string): Promise<void> => {
       if (!directoryHandle) throw new Error("Nenhuma pasta aberta.");
-      const pathNorm = sanitizeFilePath(relativePath) ?? relativePath.replace(/\\/g, "/").trim();
+      // Prioriza normalização total (inclusive barras) para bater com a árvore de arquivos
+      const pathNorm = relativePath.replace(/\\/g, "/").replace(/^\/+/, "").trim();
       await writeFileContentFs(directoryHandle, pathNorm, content);
       setOpenFiles((prev) =>
-        prev.map((f) =>
-          (sanitizeFilePath(f.path) ?? f.path) === pathNorm ? { ...f, content, isDirty: false } : f
-        )
+        prev.map((f) => {
+          const fPathNorm = f.path.replace(/\\/g, "/").replace(/^\/+/, "").trim();
+          return fPathNorm === pathNorm ? { ...f, content, isDirty: false } : f;
+        })
       );
     },
     [directoryHandle]
@@ -577,12 +544,13 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
   const createFileWithContent = useCallback(
     async (relativePath: string, content: string): Promise<void> => {
       if (!directoryHandle) throw new Error("Nenhuma pasta aberta.");
-      const pathNorm = sanitizeFilePath(relativePath) ?? relativePath.replace(/\\/g, "/").trim();
+      const pathNorm = relativePath.replace(/\\/g, "/").replace(/^\/+/, "").trim();
       await createFileWithContentFs(directoryHandle, pathNorm, content);
       setOpenFiles((prev) =>
-        prev.map((f) =>
-          (sanitizeFilePath(f.path) ?? f.path) === pathNorm ? { ...f, content, isDirty: false } : f
-        )
+        prev.map((f) => {
+          const fPathNorm = f.path.replace(/\\/g, "/").replace(/^\/+/, "").trim();
+          return fPathNorm === pathNorm ? { ...f, content, isDirty: false } : f;
+        })
       );
     },
     [directoryHandle]
@@ -639,11 +607,14 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
         addOutputMessage({ type: "error", text: "Abra uma pasta antes de apagar arquivos." });
         return;
       }
-      const pathNorm = relativePath.replace(/^\//, "").trim();
+      const pathNorm = relativePath.replace(/\\/g, "/").replace(/^\/+/, "").trim();
       if (!pathNorm) return;
       try {
         await deleteFileFs(directoryHandle, pathNorm);
-        setOpenFiles((prev) => prev.filter((f) => f.path !== pathNorm));
+        setOpenFiles((prev) => prev.filter((f) => {
+          const fPathNorm = f.path.replace(/\\/g, "/").replace(/^\/+/, "").trim();
+          return fPathNorm !== pathNorm;
+        }));
         if (activeFilePath === pathNorm) setActiveFilePath(null);
         const tree = await listDirectoryRecursive(directoryHandle);
         setFileTree(tree);
@@ -661,18 +632,82 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
         addOutputMessage({ type: "error", text: "Abra uma pasta antes de apagar pastas." });
         return;
       }
-      const pathNorm = relativePath.replace(/^\//, "").trim();
+      const pathNorm = relativePath.replace(/\\/g, "/").replace(/^\/+/, "").trim();
       if (!pathNorm) return;
       try {
         await deleteDirectoryFs(directoryHandle, pathNorm);
         const prefix = pathNorm.endsWith("/") ? pathNorm : pathNorm + "/";
-        setOpenFiles((prev) => prev.filter((f) => f.path !== pathNorm && !f.path.startsWith(prefix)));
+        setOpenFiles((prev) => prev.filter((f) => {
+          const fPathNorm = f.path.replace(/\\/g, "/").replace(/^\/+/, "").trim();
+          return fPathNorm !== pathNorm && !fPathNorm.startsWith(prefix);
+        }));
         if (activeFilePath === pathNorm || activeFilePath?.startsWith(prefix)) setActiveFilePath(null);
         const tree = await listDirectoryRecursive(directoryHandle);
         setFileTree(tree);
         addOutputMessage({ type: "success", text: `Pasta removida: ${pathNorm}` });
       } catch (err) {
         addOutputMessage({ type: "error", text: `Erro ao apagar pasta: ${(err as Error).message}` });
+      }
+    },
+    [directoryHandle, activeFilePath, addOutputMessage]
+  );
+
+  const renameEntryInProject = useCallback(
+    async (oldPathRaw: string, newName: string) => {
+      if (!directoryHandle) return;
+      const oldPath = oldPathRaw.replace(/\\/g, "/").replace(/^\/+/, "").trim();
+      try {
+        const newPath = await renameEntryFs(directoryHandle, oldPath, newName);
+        setOpenFiles((prev) =>
+          prev.map((f) => {
+            if (f.path === oldPath) return { ...f, path: newPath, name: newName };
+            if (f.path.startsWith(oldPath + "/")) {
+              return { ...f, path: f.path.replace(oldPath, newPath) };
+            }
+            return f;
+          })
+        );
+        if (activeFilePath === oldPath) setActiveFilePath(newPath);
+        else if (activeFilePath?.startsWith(oldPath + "/")) {
+          setActiveFilePath(activeFilePath.replace(oldPath, newPath));
+        }
+
+        const tree = await listDirectoryRecursive(directoryHandle);
+        setFileTree(tree);
+        addOutputMessage({ type: "success", text: `Renomeado: ${oldPath} -> ${newName}` });
+      } catch (err) {
+        addOutputMessage({ type: "error", text: `Erro ao renomear: ${(err as Error).message}` });
+      }
+    },
+    [directoryHandle, activeFilePath, addOutputMessage]
+  );
+
+  const moveEntryInProject = useCallback(
+    async (fromPathRaw: string, toPathRaw: string) => {
+      if (!directoryHandle) return;
+      const fromPath = fromPathRaw.replace(/\\/g, "/").replace(/^\/+/, "").trim();
+      const toPath = toPathRaw.replace(/\\/g, "/").replace(/^\/+/, "").trim();
+      try {
+        await moveEntryFs(directoryHandle, fromPath, toPath);
+        setOpenFiles((prev) =>
+          prev.map((f) => {
+            if (f.path === fromPath) return { ...f, path: toPath };
+            if (f.path.startsWith(fromPath + "/")) {
+              return { ...f, path: f.path.replace(fromPath, toPath) };
+            }
+            return f;
+          })
+        );
+        if (activeFilePath === fromPath) setActiveFilePath(toPath);
+        else if (activeFilePath?.startsWith(fromPath + "/")) {
+          setActiveFilePath(activeFilePath.replace(fromPath, toPath));
+        }
+
+        const tree = await listDirectoryRecursive(directoryHandle);
+        setFileTree(tree);
+        addOutputMessage({ type: "success", text: `Movido: ${fromPath} -> ${toPath}` });
+      } catch (err) {
+        addOutputMessage({ type: "error", text: `Erro ao mover: ${(err as Error).message}` });
       }
     },
     [directoryHandle, activeFilePath, addOutputMessage]
@@ -703,14 +738,6 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
     async (taskLine: string): Promise<void> => {
       if (!directoryHandle) return;
       await updateChecklistOnDisk(directoryHandle, taskLine);
-    },
-    [directoryHandle]
-  );
-
-  const markChecklistPhaseDone = useCallback(
-    async (taskLines: string[]): Promise<void> => {
-      if (!directoryHandle || taskLines.length === 0) return;
-      await updateChecklistOnDisk(directoryHandle, taskLines);
     },
     [directoryHandle]
   );
@@ -831,28 +858,28 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
         const content = await readChecklistFs(directoryHandle);
         const newLine = validation.taskLineToMark?.trim();
         let newContent = content;
+
         if (newLine) {
-          newContent = replaceTaskLineWithCompleted(content, newLine);
-          if (newContent === content) {
-            const lines = content.split("\n");
+          const lines = content.split("\n");
+          const idx = lines.findIndex(l => l.includes(newLine));
+          if (idx >= 0) {
+            lines[idx] = lines[idx].replace(/\[\s?\]/, "[x]");
+            newContent = lines.join("\n");
+          } else {
+            // Fallback: busca por descrição normalizada
             const taskNorm = taskDescription.trim().replace(/\s+/g, " ");
-            const idx = lines.findIndex((l) => {
+            const fallbackIdx = lines.findIndex((l) => {
               const desc = l.replace(/^\s*[-–—−]\s*\[\s*[ xX]\s*\]\s*/i, "").trim().replace(/\s+/g, " ");
               return desc === taskNorm || l.includes(taskDescription.trim());
             });
-            if (idx >= 0 && /^\s*[-–—−]\s*\[\s*\]\s*/.test(lines[idx])) {
-              lines[idx] = lines[idx].replace(/\[\s*\]/, "[x]");
+            if (fallbackIdx >= 0 && /^\s*[-–—−]\s*\[\s*\]\s*/.test(lines[fallbackIdx])) {
+              lines[fallbackIdx] = lines[fallbackIdx].replace(/\[\s*\]/, "[x]");
               newContent = lines.join("\n");
             }
           }
         }
         await writeChecklistFs(directoryHandle, newContent);
-        let contentAfter = await readChecklistFs(directoryHandle);
-        const withPhase = applyAllPhaseCompletions(contentAfter);
-        if (withPhase !== contentAfter) {
-          await writeChecklistFs(directoryHandle, withPhase);
-          contentAfter = withPhase;
-        }
+        const contentAfter = await readChecklistFs(directoryHandle);
         setOpenFiles((prev) =>
           prev.map((f) =>
             f.path === "checklist.md" ? { ...f, content: contentAfter } : f
@@ -874,283 +901,12 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
     [directoryHandle, addOutputMessage, setOpenFiles]
   );
 
-  const updatePendingDiffContent = useCallback((filePath: string, content: string) => {
-    setPendingDiffReview((prev) => {
-      if (!prev) return null;
-      const files = prev.files.map((f) =>
-        f.filePath === filePath ? { ...f, afterContent: content } : f
-      );
-      return { ...prev, files };
-    });
-  }, []);
-
-  const rejectDiffReview = useCallback(() => {
-    setPendingDiffReview(null);
-    setLoopStatus("idle");
-    setConsecutiveFailures((c) => {
-      const next = c + 1;
-      addOutputMessage({ type: "info", text: "Alterações rejeitadas. Nenhum arquivo foi gravado." });
-      if (next >= 3) {
-        addOutputMessage({
-          type: "error",
-          text: "Esta tarefa falhou 3 vezes seguidas. Revise o checklist ou o código e tente novamente (intervenção humana recomendada).",
-        });
-      }
-      return next;
-    });
-  }, [addOutputMessage]);
-
-  const acceptDiffReview = useCallback(
-    async () => {
-      const pending = pendingDiffReview;
-      if (!pending || !directoryHandle || pending.files.length === 0) return;
-      setPendingDiffReview(null);
-
-      try {
-        for (const file of pending.files) {
-          const pathNormalized = sanitizeFilePath(file.filePath) ?? file.filePath;
-          const codeSanitized = sanitizeCodeContent(file.afterContent.trim());
-          if (file.beforeContent === null) {
-            await createFileWithContent(pathNormalized, codeSanitized);
-          } else {
-            await writeFileContent(pathNormalized, codeSanitized);
-          }
-          addOutputMessage({ type: "success", text: `Arquivo salvo: ${pathNormalized}` });
-        }
-        const tree = await listDirectoryRecursive(directoryHandle);
-        setFileTree(tree);
-
-        if (pending.fromChat) {
-          const phaseLines = pending.phaseLines ?? [];
-          const taskToMark = currentChecklistTask;
-          setCurrentChecklistTask(null);
-          const savedFilenames = pending.files.map((f) => f.filePath.split("/").pop() ?? f.filePath).filter(Boolean);
-          const hintsForMatching: string[] = [
-            ...pending.files.map((f) => f.filePath),
-            ...savedFilenames,
-            ...pending.files.flatMap((f) => [f.afterContent?.slice(0, 2000) ?? ""]),
-          ].filter(Boolean);
-          let content = await readChecklistFs(directoryHandle);
-          const fromSavedFiles = findTasksMatchingSavedFiles(content, savedFilenames);
-          const fromHints = findTasksMatchingHints(content, hintsForMatching);
-          const currentTaskLine = taskToMark?.taskLine?.trim();
-          const combined = Array.from(new Set([...(currentTaskLine ? [currentTaskLine] : []), ...fromSavedFiles, ...fromHints]));
-          const allToMark =
-            phaseLines.length > 0
-              ? phaseLines
-              : combined;
-          if (allToMark.length > 0) {
-            await markChecklistPhaseDone(allToMark);
-            content = await readChecklistFs(directoryHandle);
-            const withPhase = applyAllPhaseCompletions(content);
-            if (withPhase !== content) {
-              await writeChecklistFs(directoryHandle, withPhase);
-              content = withPhase;
-            } else {
-              content = await readChecklistFs(directoryHandle);
-            }
-            setOpenFiles((prev) =>
-              prev.map((f) => (f.path === "checklist.md" ? { ...f, content, isDirty: false } : f))
-            );
-            notifyChecklistUpdated();
-            const subtopics = allToMark.slice(0, 3).map((l) => l.replace(/^\s*[-–—−]\s*\[\s*[ x]\s*\]\s*/i, "").trim().slice(0, 50)).join("; ");
-            addOutputMessage({
-              type: "success",
-              text: `Subtópicos marcados [x] no checklist: ${subtopics}${allToMark.length > 3 ? " …" : ""}`,
-            });
-          } else {
-            addOutputMessage({ type: "success", text: "Alterações aplicadas." });
-          }
-          setLoopStatus("idle");
-          const nextRaw = await analyzeChecklistGroq(content);
-          const nextResult = Array.isArray(nextRaw) ? nextRaw[0] : nextRaw;
-          setCurrentPhaseLines(null);
-          if (nextResult?.taskLine && nextResult?.taskDescription) {
-            setNextPendingTask({ taskLine: nextResult.taskLine, taskDescription: nextResult.taskDescription });
-          } else {
-            setNextPendingTask(null);
-            if (loopAutoRunning) setLoopAutoRunning(false);
-          }
-          notifyChecklistUpdated();
-          return;
-        }
-        const firstPath = sanitizeFilePath(pending.files[0].filePath) ?? pending.files[0].filePath;
-        setLoopStatus("validating");
-        const approved = await validateFileAndUpdateChecklist(
-          pending.taskDescription,
-          firstPath,
-          firstPath.split("/").pop()
-        );
-        setLoopStatus("idle");
-        if (approved) {
-          setConsecutiveFailures(0);
-          await new Promise((r) => setTimeout(r, 400));
-        }
-        if (approved) notifyChecklistUpdated();
-        if (approved) {
-          addOutputMessage({ type: "success", text: "Loop concluído. Pode executar novamente para a próxima tarefa." });
-        } else {
-          setConsecutiveFailures((c) => {
-            const next = c + 1;
-            addOutputMessage({ type: "info", text: "Loop concluído (tarefa não marcada como concluída)." });
-            if (next >= 3) {
-              addOutputMessage({
-                type: "error",
-                text: "Esta tarefa falhou 3 vezes seguidas. Revise o checklist ou o código e tente novamente.",
-              });
-            }
-            return next;
-          });
-        }
-      } catch (err) {
-        setLoopStatus("error");
-        addOutputMessage({ type: "error", text: `Erro ao salvar: ${(err as Error).message}` });
-        setConsecutiveFailures((c) => {
-          const next = c + 1;
-          if (next >= 3) {
-            addOutputMessage({
-              type: "error",
-              text: "Esta tarefa falhou 3 vezes seguidas. Intervenção humana recomendada.",
-            });
-          }
-          return next;
-        });
-      }
-    },
-    [
-      pendingDiffReview,
-      directoryHandle,
-      addOutputMessage,
-      validateFileAndUpdateChecklist,
-      setFileTree,
-      currentChecklistTask,
-      setCurrentChecklistTask,
-      setNextPendingTask,
-      markChecklistTaskDone,
-      markChecklistPhaseDone,
-      forceMarkTaskAsDone,
-      analyzeChecklistGroq,
-      readChecklistFs,
-      writeChecklistFs,
-      setOpenFiles,
-      writeFileContent,
-      createFileWithContent,
-      loopAutoRunning,
-      setLoopAutoRunning,
-      notifyChecklistUpdated,
-    ]
-  );
-
-  const proposeChangeFromChat = useCallback(
-    async (filePath: string, proposedContent: string) => {
-      if (!directoryHandle) {
-        addOutputMessage({ type: "error", text: "Abra uma pasta antes de implementar alterações." });
-        return;
-      }
-      const pathNorm = sanitizeFilePath(filePath) ?? filePath;
-      const contentSanitized = sanitizeCodeContent(proposedContent.trim());
-      let beforeContent: string | null = null;
-      try {
-        beforeContent = await readFileContentFs(directoryHandle, pathNorm);
-      } catch {
-        // Arquivo não existe = novo arquivo; beforeContent permanece null
-      }
-      setPendingDiffReview({
-        files: [{ filePath: pathNorm, beforeContent, afterContent: contentSanitized }],
-        taskDescription: "",
-        checklistResult: { taskDescription: "" },
-        fromChat: true,
-      });
-      setLoopStatus("awaiting_review");
-    },
-    [directoryHandle, addOutputMessage]
-  );
-
-  const proposeChangesFromChat = useCallback(
-    async (
-      files: Array<{ filePath: string; proposedContent: string }>,
-      options?: { phaseLines?: string[] }
-    ) => {
-      if (!directoryHandle) {
-        addOutputMessage({ type: "error", text: "Abra uma pasta antes de implementar alterações." });
-        return;
-      }
-      if (files.length === 0) return;
-      const pendingFiles: Array<{ filePath: string; beforeContent: string | null; afterContent: string }> = [];
-      for (const f of files) {
-        const pathNorm = sanitizeFilePath(f.filePath) ?? f.filePath;
-        const contentSanitized = sanitizeCodeContent(f.proposedContent.trim());
-        let beforeContent: string | null = null;
-        try {
-          beforeContent = await readFileContentFs(directoryHandle, pathNorm);
-        } catch {
-          // Arquivo não existe = novo arquivo
-        }
-        pendingFiles.push({
-          filePath: pathNorm,
-          beforeContent,
-          afterContent: contentSanitized,
-        });
-      }
-      setPendingDiffReview({
-        files: pendingFiles,
-        taskDescription: "",
-        checklistResult: { taskDescription: "" },
-        fromChat: true,
-        phaseLines: options?.phaseLines,
-      });
-      setLoopStatus("awaiting_review");
-    },
-    [directoryHandle, addOutputMessage]
-  );
-
   /** Atualiza apenas a árvore de arquivos após criação/deleção. O checklist fica sob controle do usuário. */
   const refreshTreeOnly = useCallback(async () => {
     if (!directoryHandle) return;
     const tree = await listDirectoryRecursive(directoryHandle);
     setFileTree(tree);
   }, [directoryHandle]);
-
-  const approvePendingDeletion = useCallback(async () => {
-    const first = pendingDeletionQueue[0];
-    if (!first || !directoryHandle) return;
-    setPendingDeletionQueue((q) => q.slice(1));
-    const pathNorm = first.path.replace(/^\//, "").trim();
-    if (!pathNorm) return;
-    try {
-      if (first.kind === "folder") {
-        await deleteDirectoryFs(directoryHandle, pathNorm);
-        const prefix = pathNorm.endsWith("/") ? pathNorm : pathNorm + "/";
-        setOpenFiles((prev) => prev.filter((f) => f.path !== pathNorm && !f.path.startsWith(prefix)));
-        if (activeFilePath === pathNorm || activeFilePath?.startsWith(prefix)) setActiveFilePath(null);
-      } else {
-        await deleteFileFs(directoryHandle, pathNorm);
-        setOpenFiles((prev) => prev.filter((f) => f.path !== pathNorm));
-        if (activeFilePath === pathNorm) setActiveFilePath(null);
-      }
-      await refreshTreeOnly();
-      addOutputMessage({
-        type: "success",
-        text: first.kind === "folder" ? `Pasta removida: ${pathNorm}` : `Arquivo removido: ${pathNorm}`,
-      });
-    } catch (err) {
-      addOutputMessage({
-        type: "error",
-        text: `Erro ao apagar: ${(err as Error).message}`,
-      });
-    }
-  }, [
-    pendingDeletionQueue,
-    directoryHandle,
-    activeFilePath,
-    setActiveFilePath,
-    refreshTreeOnly,
-    addOutputMessage,
-  ]);
-
-  const rejectPendingDeletion = useCallback(() => {
-    setPendingDeletionQueue((q) => q.slice(1));
-  }, []);
 
   const executeEvaActions = useCallback(
     async (content: string) => {
@@ -1170,12 +926,6 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
             await createDirectoryFs(directoryHandle, path);
             await refreshTreeOnly();
             addOutputMessage({ type: "info", text: `Analista criou pasta: ${path}` });
-          } else if (a.action === "DELETE_FILE") {
-            setPendingDeletionQueue((q) => [...q, { kind: "file", path: a.path }]);
-            addOutputMessage({ type: "info", text: `Analista solicitou exclusão de arquivo: ${a.path}. Aprove no modal.` });
-          } else if (a.action === "DELETE_FOLDER") {
-            setPendingDeletionQueue((q) => [...q, { kind: "folder", path: a.path }]);
-            addOutputMessage({ type: "info", text: `Analista solicitou exclusão de pasta: ${a.path}. Aprove no modal.` });
           } else if (a.action === "MOVE_FILE") {
             await moveFileFs(directoryHandle, a.from, a.to);
             addOutputMessage({ type: "success", text: `Arquivo movido: ${a.from} → ${a.to}` });
@@ -1186,6 +936,15 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
               type: "info",
               text: `Comando sugerido pela IA (execute no terminal do seu projeto): ${a.command}`,
             });
+          } else if (a.action === "PATCH_FILE") {
+            try {
+              const path = a.path.replace(/^\//, "").trim();
+              await patchFileContents(directoryHandle, path, a.search, a.replace);
+              addOutputMessage({ type: "success", text: `Patch aplicado em: ${path}` });
+              await refreshFileTree();
+            } catch (err) {
+              addOutputMessage({ type: "error", text: `Falha ao aplicar patch: ${(err as Error).message}` });
+            }
           }
         } catch (err) {
           addOutputMessage({
@@ -1200,33 +959,9 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
       addOutputMessage,
       refreshTreeOnly,
       createFileWithContent,
+      setPendingTerminalCommands,
     ]
   );
-
-  const executeGenesisQueue = useCallback(async () => {
-    const queue = genesisQueue;
-    if (!queue?.length || !directoryHandle) return;
-    setGenesisQueue(null);
-    try {
-      for (const file of queue) {
-        const pathNorm = sanitizeFilePath(file.path) ?? file.path;
-        const contentSanitized = sanitizeCodeContent(file.content.trim());
-        try {
-          await readFileContentFs(directoryHandle, pathNorm);
-          await writeFileContent(pathNorm, contentSanitized);
-          addOutputMessage({ type: "success", text: `Atualizado: ${pathNorm}` });
-        } catch {
-          await createFileWithContent(pathNorm, contentSanitized);
-          addOutputMessage({ type: "success", text: `Criado: ${pathNorm}` });
-        }
-      }
-      const tree = await listDirectoryRecursive(directoryHandle);
-      setFileTree(tree);
-      addOutputMessage({ type: "success", text: "Gênesis concluído. Fila limpa." });
-    } catch (err) {
-      addOutputMessage({ type: "error", text: `Erro ao executar Gênesis: ${(err as Error).message}` });
-    }
-  }, [genesisQueue, directoryHandle, addOutputMessage, writeFileContent, createFileWithContent]);
 
   const value: IdeStateContextValue = {
     fileTree,
@@ -1254,25 +989,15 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
     ensureChecklist,
     readChecklist,
     writeChecklist,
+    renameEntryInProject,
+    moveEntryInProject,
     saveCurrentFile,
     validateFileAndUpdateChecklist,
     loopStatus,
     forgetStoredDirectory,
-    proposeChangeFromChat,
-    proposeChangesFromChat,
     runStatus,
     runCurrentFile,
-    pendingDiffReview,
-    acceptDiffReview,
-    rejectDiffReview,
-    updatePendingDiffContent,
     consecutiveFailures,
-    currentTaskKey,
-    pendingAutocura,
-    setPendingAutocura,
-    genesisQueue,
-    setGenesisQueue,
-    executeGenesisQueue,
     currentChecklistTask,
     setCurrentChecklistTask,
     nextPendingTask,
@@ -1284,12 +1009,7 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
     setLoopAutoRunning,
     getNextTaskFromContent,
     getTasksForPhase,
-    currentPhaseLines,
-    setCurrentPhaseLines,
     executeEvaActions,
-    pendingDeletionQueue,
-    approvePendingDeletion,
-    rejectPendingDeletion,
     onChecklistUpdated,
     previewUrl,
     startLivePreview,
@@ -1297,8 +1017,69 @@ export function IdeStateProvider({ children }: { children: React.ReactNode }) {
     refreshPreviewFiles,
     pendingTerminalCommands,
     clearPendingTerminalCommands: () => setPendingTerminalCommands([]),
+    pendingReviewActions,
+    setPendingReviewActions,
+    runTerminalCommand: async (cmd: string) => {
+      const trimmed = cmd.trim();
+      if (!trimmed) return;
+
+      let runtime: "node" | "python" = "node";
+      if (trimmed.startsWith("pip ") || trimmed.startsWith("python ") || trimmed.includes(".py")) {
+        runtime = "python";
+      }
+
+      setRunStatus("running");
+      addOutputMessage({ type: "info", text: `Executando comando: ${trimmed}...` });
+
+      try {
+        if (runtime === "node") {
+          const wc = await getWebContainer().catch(() => null);
+          if (!wc) {
+            addOutputMessage({ type: "error", text: "WebContainer não disponível para execução." });
+            return;
+          }
+          const [prog, ...args] = trimmed.split(" ");
+          const proc = await wc.spawn(prog, args);
+          const reader = proc.output.getReader();
+          (async () => {
+            for (; ;) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              if (value) addOutputMessage({ type: "info", text: value });
+            }
+          })();
+          const exitCode = await proc.exit;
+          if (exitCode === 0) {
+            addOutputMessage({ type: "success", text: `Comando concluído: ${trimmed}` });
+          } else {
+            addOutputMessage({ type: "error", text: `Comando falhou com código ${exitCode}` });
+          }
+        } else {
+          // Python / Pyodide
+          if (trimmed.startsWith("pip install ")) {
+            const pkg = trimmed.replace("pip install ", "").trim();
+            addOutputMessage({ type: "info", text: `Instalando pacote Python: ${pkg}...` });
+            const pyodide = await runPythonInPyodide(`import micropip; await micropip.install('${pkg}')`).catch(e => ({ success: false, error: e.message }));
+            if (pyodide.success) {
+              addOutputMessage({ type: "success", text: `Pacote ${pkg} instalado via micropip.` });
+            } else {
+              addOutputMessage({ type: "error", text: `Erro micropip: ${pyodide.error}` });
+            }
+          } else {
+            const res = await runPythonInPyodide(trimmed);
+            if (res.stdout) addOutputMessage({ type: "info", text: res.stdout });
+            if (res.stderr) addOutputMessage({ type: "warning", text: res.stderr });
+          }
+        }
+      } catch (err) {
+        addOutputMessage({ type: "error", text: `Erro na execução: ${(err as Error).message}` });
+      } finally {
+        setRunStatus("idle");
+      }
+    },
     requestWritePermission,
   };
+
 
   return (
     <IdeStateContext.Provider value={value}>{children}</IdeStateContext.Provider>

@@ -1,167 +1,149 @@
 import { NextResponse } from 'next/server';
 
-// Configuração para estabilidade de rede local (Node.js puro)
+// Garante que o servidor Next.js não fique cacheando ou travando
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-
-    // 1. Tratamento do Payload
-    let rawMessages;
-    if (body.action === 'chat' && body.payload) {
-      rawMessages = body.payload.messages;
-    } else {
-      rawMessages = body.messages;
+    const groqApiKey = process.env.GROQ_API_KEY;
+    if (!groqApiKey) {
+      return NextResponse.json({ error: 'GROQ_API_KEY não configurada em .env.local' }, { status: 500 });
     }
 
-    // Validação básica
-    if (!rawMessages || !Array.isArray(rawMessages)) {
-      console.error('[EVA-API] Payload inválido recebido:', body);
-      return NextResponse.json(
-        { error: 'Payload inválido: messages deve ser um array.' },
-        { status: 400 }
-      );
-    }
+    let messages = [];
 
-    // 2. Definições de conexão (Forçando IP para evitar timeout no Windows)
-    const ollamaUrl = process.env.OLLAMA_URL || 'http://127.0.0.1:11434';
-    const model = process.env.OLLAMA_MODEL || 'llama3.2';
+    if (body.action === 'analyze') {
+      messages = [
+        {
+          role: 'system', content: `Analise o checklist e determine a próxima tarefa pendente. Retorne SOMENTE um JSON válido com o seguinte formato:
+{
+  "taskLine": "- [ ] Descrição exata da tarefa como está no arquivo",
+  "taskDescription": "Instrução clara sobre o que precisa ser feito",
+  "suggestedFile": "caminho/do/arquivo.ts",
+  "suggestedTech": "framework ou ferramenta"
+}
+Se for solicitado um targetPhase específico, retorne uma lista (array) em formato JSON de todas as tarefas pendentes daquela fase.` },
+        { role: 'user', content: `Checklist:\n${body.payload?.checklistContent}\n\ntargetPhase: ${body.payload?.targetPhase || ''}` }
+      ];
+    } else if (body.action === 'validate') {
+      messages = [
+        {
+          role: 'system', content: `Verifique se o código do arquivo atende e implementa os requisitos da tarefa solicitada. Retorne SOMENTE um JSON válido com:
+{
+  "approved": boolean (true ou false),
+  "reason": "motivo detalhado da sua decisão",
+  "taskLineToMark": "- [x] Linha exata que deve ser marcada como concluída"
+}` },
+        { role: 'user', content: `Tarefa Solicitada: ${body.payload?.taskDescription}\nNome do Arquivo Editado: ${body.payload?.fileName}\nConteudo do Arquivo:\n${body.payload?.fileContent}` }
+      ];
+    } else if (body.action === 'report_error') {
+      messages = [
+        { role: 'system', content: 'Você é um Analista de Sistemas especializado. Explique concisamente o erro de execução no código do projeto e sugira uma correção lógica.' },
+        { role: 'user', content: `Ocorreu um Erro: ${body.payload?.errorMessage}\nArquivo: ${body.payload?.filePath}\nConteudo:\n${body.payload?.fileContent}\nTarefa Original:\n${body.payload?.taskDescription}` }
+      ];
+    } else if (body.action === 'chat_to_tasks') {
+      messages = [
+        { role: 'system', content: 'Transforme o pedido não-técnico ou vago do usuário em novas linhas acionáveis para um checklist/Roadmap de desenvolvimento. Formate APENAS como uma lista markdown de itens não marcados, ex:\n- [ ] Nova funcionalidade...' },
+        { role: 'user', content: `Comando do usuário: ${body.payload?.userMessage}\n\nChecklist atual:\n${body.payload?.checklistContent || 'Vazio'}` }
+      ];
+    } else if (body.action === 'compare_code_changes') {
+      messages = [
+        { role: 'system', content: 'Explique brevemente para um desenvolvedor as modificações realizadas neste arquivo em relação ao código antigo. Seja sucinto.' },
+        { role: 'user', content: `Caminho do Arquivo: ${body.payload?.filePath}\nCódigo Antigo:\n${body.payload?.originalContent}\nCódigo Novo:\n${body.payload?.newContent}\nTarefa Concluída:\n${body.payload?.taskDescription}` }
+      ];
+    } else if (body.action === 'suggest_filename') {
+      messages = [
+        { role: 'system', content: 'Identifique o nome e a extensão corretos para este código. Responda APENAS com o nome do arquivo, ex: app.js ou style.css. Nada de texto extra.' },
+        { role: 'user', content: body.payload?.content || '' }
+      ];
+    } else if (body.action === 'chat') {
+      // Chat normal (e.g. chatWithAnalyst) ou otimização Gemini
+      const messagesFromClient = body.payload ? body.payload.messages : body.messages;
+      const lastUserMessage = messagesFromClient[messagesFromClient.length - 1]?.content || "";
+      const projectContext = body.payload?.projectContext || "";
+      const checklistContext = body.payload?.checklistContext || "";
+      const geminiOutput = body.payload?.geminiOutput || "";
 
-    console.log(`[EVA-API] Conectando ao Ollama em: ${ollamaUrl} | Modelo: ${model}`);
+      if (geminiOutput) {
+        // Isso executa a "Otimização Executiva" para transformar saída suja do Gemini em blocos FILE: puros e processáveis pelo EVA Studio
+        const promptOtimizacao = `PROJETO: EVA Studio (Otimização Executiva)
+CONTEXTO ATUAL (ESTRUTURA/ARQUIVOS):
+${projectContext}
 
-    // 3. System Prompt (ORQUESTRADOR TÉCNICO)
-    const systemInstruction = {
-      role: 'system',
-      content: `Você é o Orquestrador Técnico da IDE EVA.
+CHECKLIST (PLANO):
+${checklistContext}
 
-Sua única função é converter qualquer solicitação do usuário em uma instrução técnica estruturada e executável para o AI Studio (Gemini).
+USUÁRIO PEDIU: ${lastUserMessage}
+CÓDIGO GERADO PELO GEMINI (USE PARA COMPARAR E GERAR PATCHES):
+${geminiOutput}
 
-Você nunca responde diretamente ao usuário.
+REGRAS DE OURO (SISTEMA DE ARQUIVOS):
+1. ATUAÇÃO ESTRITA: Você é um otimizador de código. Sua única função é formatar a intenção do Gemini em blocos de arquivos limpos para o frontend.
+2. PRESERVAÇÃO DE CAMINHOS: Ao identificar que o Gemini quer criar ou editar um arquivo (ex: \`// Ficheiro: js/main.js\`, \`/* src/styles.css */\`, \`FILE: utils/api.ts\`), você DEVE copiar o caminho EXATAMENTE como está, INCLUINDO TODAS AS PASTAS. Nunca abrevie \`js/main.js\` para \`main.js\`.
+3. TRANSCRIÇÃO DE CÓDIGO: Copie o bloco de código do Gemini INTEIRO. NUNCA use comentários como "// ...resto do código...". O código deve ser reescrito por completo.
 
-Sua resposta deve sempre começar exatamente com:
+COMPORTAMENTO DO ANALISTA:
+- NÃO repita o código do Gemini solto no texto do chat (o usuário já viu).
+- Se o Gemini sugerir comandos de terminal (npm install, etc), ignore-os desta vez, foque apenas nos arquivos.
 
-PROMPT PARA O AI STUDIO, GEMINI:
+FORMATO DE RESPOSTA OBRIGATÓRIO (Gere apenas os blocos necessários):
 
-Após isso, escreva apenas linguagem natural, sem comentários, sem explicações adicionais e sem texto fora da instrução.
+Para cada arquivo novo ou totalmente reescrito, você DEVE pular uma linha e usar EXATAMENTE este formato:
+FILE: caminho/com/pastas/arquivo.ext
+\`\`\`linguagem
+todo o codigo aqui
+\`\`\`
 
-Não use JSON, chaves, colchetes ou qualquer sintaxe técnica.
+Colete as modificações do Gemini e aplique esta estrutura limpa para cada arquivo.`;
 
-A instrução deve obrigatoriamente seguir exatamente esta estrutura, com os títulos explícitos abaixo:
+        console.log(`[EVA-BACKEND] Chamando Groq para estruturar os arquivos do Gemini...`);
 
-Objetivo:
-Descreva claramente o que deve ser feito.
-
-Tecnologias:
-Liste as tecnologias envolvidas. Se não houver informação suficiente, inferir tecnologias plausíveis com base no contexto.
-
-Requisitos Funcionais:
-Descreva detalhadamente o comportamento esperado e as regras da implementação.
-
-Requisitos Visuais:
-Descreva interface, estilo ou comportamento visual. Se não houver, escreva: Não aplicável.
-
-Estrutura de Arquivos:
-Defina os arquivos esperados com suas extensões CORRETAS (ex.: .html, .css, .js, .tsx). 
-NUNCA use .txt para arquivos de código (HTML, CSS, JS, etc). Se for apenas uma mensagem de texto literário, use mensagem.txt.
-
-Inclua todas as seções acima obrigatoriamente. Nunca omita nenhuma seção.
-
-Use frases diretas, técnicas e objetivas. Evite redundância e expansão desnecessária.
-
-Finalize sempre a instrução com:
-"Retorne o resultado APENAS em blocos Markdown (​​​\`\`\`​​​), contendo FILE: caminho/do/arquivo.ext na primeira linha de cada bloco."
-
-Nunca altere o formato. NUNCA SALVE OS ARQUIVOS DE CÓDIGO EM TXT. Se o caminho do arquivo incluir pastas (ex: css/style.css), forneça o caminho COMPLETO para que as pastas sejam criadas.`
-    };
-
-    // 4. LIMPEZA DE DADOS (CRÍTICO PARA EVITAR ERRO 400)
-    const cleanMessages = rawMessages
-      .filter((m: any) => m.role !== 'system')
-      .map((m: any) => ({
-        role: m.role,
-        content: m.content
-      }));
-
-    // Junta nosso System Prompt novo com as mensagens limpas do usuário
-    const finalMessages = [systemInstruction, ...cleanMessages];
-
-    const payloadString = JSON.stringify({
-      model: model,
-      messages: finalMessages,
-      stream: false,
-      options: {
-        temperature: 0.1,
-        num_ctx: 4096
+        messages = [
+          { role: 'system', content: 'Você é um assistente cirúrgico que extrai código bagunçado e o empacota na estrutura FILE:' },
+          { role: 'user', content: promptOtimizacao }
+        ];
+      } else {
+        // Se for um chat normal (ex: quando provider é 'groq' no chat do Studio)
+        messages = messagesFromClient;
       }
+    } else {
+      return NextResponse.json({ error: 'Ação não reconhecida no payload' }, { status: 400 });
+    }
+
+    const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${groqApiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: "llama-3.3-70b-versatile",
+        messages: messages,
+        temperature: 0.1, // temperatura baixa para garantir precisão e respeito à formatação solicitada
+      })
     });
 
-    console.log(`[EVA-API] Enviando para Ollama. Msgs: ${finalMessages.length}. Payload: ${payloadString.length} bytes`);
-
-    // 5. Chamada ao Ollama com Timeout Manual
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 minutos de timeout
-
-    try {
-      const response = await fetch(`${ollamaUrl}/api/chat`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Connection': 'keep-alive'
-        },
-        body: payloadString,
-        signal: controller.signal
-      });
-
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`[EVA-API] Erro Ollama (${response.status}): ${errorText}`);
-        throw new Error(`Ollama recusou o pedido: ${errorText}`);
+    if (!groqRes.ok) {
+      let errDesc = '';
+      try {
+        const errorResult = await groqRes.json();
+        errDesc = errorResult.error?.message || JSON.stringify(errorResult);
+      } catch {
+        errDesc = await groqRes.text();
       }
-
-      const data = await response.json();
-
-      if (!data.message || !data.message.content) {
-        throw new Error("Ollama retornou um JSON vazio ou inválido.");
-      }
-
-      // 6. Retorno Compatível com Frontend
-      return NextResponse.json({
-        choices: [
-          {
-            index: 0,
-            message: {
-              role: 'assistant',
-              content: data.message.content,
-            },
-            finish_reason: 'stop',
-          },
-        ],
-        result: data.message.content,
-        is_truncated: false,
-      });
-
-    } catch (innerError: any) {
-      clearTimeout(timeoutId);
-      if (innerError.name === 'AbortError') {
-        throw new Error("TIMEOUT OLLAMA: A IA demorou mais de 2 minutos para responder. Tente um pedido mais simples ou verifique seu hardware.");
-      }
-      throw innerError;
+      throw new Error(`Falha na API da Groq: HTTP ${groqRes.status} - ${errDesc}`);
     }
 
+    const data = await groqRes.json();
+    return NextResponse.json({
+      result: data.choices[0].message.content,
+      is_truncated: data.choices[0].finish_reason === "length" || false
+    });
+
   } catch (error: any) {
-    console.error("[EVA-API] Erro Crítico:", error);
-
-    const errorMessage = (error.cause && error.cause.code === 'ECONNREFUSED')
-      ? "ERRO DE CONEXÃO: O Ollama não está rodando em 127.0.0.1:11434."
-      : `Erro interno na IA: ${error.message}`;
-
-    return NextResponse.json(
-      { error: errorMessage },
-      { status: 503 }
-    );
+    console.error("Erro no backend:", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

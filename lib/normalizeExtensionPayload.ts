@@ -45,6 +45,14 @@ function filterSnippetOrCommand(files: Array<{ name: string; content: string }>)
 export function normalizeToFiles(p: NormalizablePayload): Array<{ name: string; content: string }> {
   if (p.files && p.files.length > 0) {
     const mapped = p.files.map((f) => {
+      // 1. SEMPRE tenta encontrar um comentário de arquivo no conteúdo primeiro
+      // O Gemini frequentemente envia "// Arquivo: src/main.js" dentro do bloco de código.
+      const fromComment = extractFilePathStrict(f.content);
+      if (fromComment) {
+        return { name: fromComment, content: stripFilenameComment(f.content) };
+      }
+
+      // 2. Se a extensão enviou file_0.txt ou a inferência falhou, tenta inferir pela sintaxe
       if (isGenericFilename(f.name)) {
         const inferred = inferFilenameFromContent(f.content);
         if (inferred) return { name: inferred, content: stripFilenameComment(f.content) };

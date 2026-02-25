@@ -1,23 +1,50 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import { MessageCircle, Loader2, AlertTriangle, Pencil, Trash2 } from "lucide-react";
+import {
+  MessageCircle,
+  MessageSquare,
+  Trash2,
+  Paperclip,
+  CheckCircle2,
+  Circle,
+  Play,
+  PlayCircle,
+  ChevronDown,
+  Loader2,
+  AlertTriangle,
+  Pencil,
+  RotateCcw,
+  Settings,
+} from "lucide-react";
 import { ChatInput, type ChatInputImage } from "@/components/layout/ChatInput";
 import { useIdeState } from "@/hooks/useIdeState";
-import { chatWithAnalyst, chatToChecklistTasks, compareCodeChanges } from "@/lib/groq";
+import {
+  chatWithAnalyst,
+  chatToChecklistTasks,
+  compareCodeChanges,
+  applyImplementation,
+  type ChatProvider
+} from "@/lib/groq";
 import { getProjectContext } from "@/lib/contextPacker";
 import { getChatMessages, saveChatMessages } from "@/lib/indexedDB";
 import { ChatCodeBlock } from "@/components/layout/ChatCodeBlock";
 import { waitForCodeFromExtension, FILENAME_ASK_GROQ } from "@/lib/messaging";
-import {
-  buildPromptForAIStudio,
-  buildPromptForAIStudioPhase,
-  buildProjectPlanPrompt,
-  extractPromptFromAssistantMessage,
-  getRequestedPhaseNumber,
-  isProjectCreationRequest,
-} from "@/lib/aiStudioPrompt";
-import { ensureChecklistItemsUnchecked, mergeChecklistPhasePreservingCompleted } from "@/lib/checklistPhase";
+import { extractRawPrompt, parseEvaActions, type EvaAction } from "@/lib/evaActions";
+import { verifyPermission } from "@/lib/fileSystem";
+import { ImplementationReview } from "@/components/layout/ImplementationReview";
+const GEMINI_PROMPT_TEMPLATE = (userRequest: string) => `
+ESTADO ATUAL DO PROJETO E PEDIDO DO USUÁRIO:
+${userRequest}
+
+REGRAS OBRIGATÓRIAS DE RETORNO:
+1. Use SEMPRE o formato FILE: caminho/pasta/arquivo.ext seguido de bloco de código markdown.
+2. NUNCA use extensões genéricas como .txt para código (.py, .js, .tsx, etc.).
+3. Respeite INTEGRALMENTE a estrutura de pastas sugerida ou existente.
+4. Coloque o nome do arquivo como comentário na primeira linha (ex: # filename: main.py).
+5. Forneça a implementação completa e funcional.
+`;
+
 
 export type ChatMessage = {
   role: "user" | "assistant";
@@ -46,11 +73,6 @@ export function ChatSidebar() {
     readChecklist,
     writeChecklist,
     addOutputMessage,
-    proposeChangeFromChat,
-    proposeChangesFromChat,
-    pendingAutocura,
-    setPendingAutocura,
-    setGenesisQueue,
     setCurrentChecklistTask,
     nextPendingTask,
     setNextPendingTask,
@@ -59,14 +81,12 @@ export function ChatSidebar() {
     getTasksForPhase,
     loopAutoRunning,
     setLoopAutoRunning,
-    currentPhaseLines,
-    setCurrentPhaseLines,
     executeEvaActions,
-    onChecklistUpdated,
     createFileWithContent,
     refreshFileTree,
     readFileContent,
-    requestWritePermission,
+    pendingReviewActions,
+    setPendingReviewActions,
   } = useIdeState();
 
   const projectId = folderName ?? "Projeto não aberto";
@@ -78,6 +98,7 @@ export function ChatSidebar() {
   const [loadingContinue, setLoadingContinue] = useState(false);
   const [loadingTasks, setLoadingTasks] = useState(false);
   const [loadingAIStudio, setLoadingAIStudio] = useState(false);
+  const [loadingContext, setLoadingContext] = useState(false);
   const [progress, setProgress] = useState<{ totalPending: number; completedCount: number } | null>(null);
   const [pendingImages, setPendingImages] = useState<ChatInputImage[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -88,13 +109,11 @@ export function ChatSidebar() {
     async (
       prompt: string,
       task?: { taskLine: string; taskDescription: string },
-      phaseLines?: string[],
-      images?: ChatInputImage[]
+      phaseLines?: string[], // mantido para compatibilidade de assinatura se necessário
+      images?: ChatInputImage[],
+      isManualChat?: boolean
     ) => {
       if (!directoryHandle || !prompt.trim()) return;
-      // Garante permissão de escrita IMEDIATAMENTE após o clique do usuário
-      const hasWrite = await requestWritePermission();
-      if (!hasWrite) return;
 
       setLoadingAIStudio(true);
       addOutputMessage({ type: "info", text: "Enviando tarefa ao AI Studio (extensão). Aguarde..." });
@@ -102,113 +121,208 @@ export function ChatSidebar() {
       try {
         const result = await waitForCodeFromExtension(
           prompt,
-          600000,
-          () => addOutputMessage({ type: "warning", text: "Extensão não detectada. Instale a EVA Studio Bridge e abra uma aba em aistudio.google.com." }),
+          6 * 60 * 1000,
+          () => addOutputMessage({ type: "warning", text: "Extensão não detectada. Instale a EVA Studio Bridge." }),
           images
         );
         if (!result.ok) {
-          addOutputMessage({ type: "error", text: result.error ?? "Erro ao receber código do AI Studio." });
+          addOutputMessage({ type: "error", text: result.error ?? "Erro ao receber do AI Studio." });
           setLoadingAIStudio(false);
           return;
         }
         const files = result.files ?? (result.filename || result.code ? [{ name: result.filename ?? "file.txt", content: result.code }] : []);
         const validFiles = files.filter((f) => f.name !== FILENAME_ASK_GROQ);
         if (validFiles.length === 0) {
-          addOutputMessage({
-            type: "warning",
-            text: "Nenhum arquivo válido recebido do AI Studio. Se o nome do arquivo não foi detectado, pergunte ao Analista o nome antes de salvar.",
-          });
+          addOutputMessage({ type: "warning", text: "Nenhum arquivo válido recebido do AI Studio." });
           setLoadingAIStudio(false);
           return;
         }
-        const isChecklistPhaseFile = (path: string) => /^docs\/fase-\d+\.md$/i.test(path.replace(/\\/g, "/"));
+
         const normalizedFiles = validFiles.map((f) => {
           const pathNorm = f.name.replace(/\\/g, "/");
-          const content = isChecklistPhaseFile(pathNorm) ? ensureChecklistItemsUnchecked(f.content) : f.content;
-          return { filePath: pathNorm, proposedContent: content };
+          return { filePath: pathNorm, proposedContent: f.content };
         });
-        const allChecklistPhases = normalizedFiles.length > 0 && normalizedFiles.every((f) => isChecklistPhaseFile(f.filePath));
-        if (allChecklistPhases) {
-          for (const f of normalizedFiles) {
+
+        for (const f of normalizedFiles) {
+          try {
+            if (f.filePath.startsWith("file_")) continue;
+
+            let originalContent = "";
+            let exists = true;
             try {
-              let contentToSave = f.proposedContent;
-              try {
-                const currentOnDisk = await readFileContent(f.filePath);
-                contentToSave = mergeChecklistPhasePreservingCompleted(currentOnDisk, f.proposedContent);
-              } catch {
-                /* arquivo novo: usa conteúdo proposto (já com [ ]) */
-              }
-              await createFileWithContent(f.filePath, contentToSave);
-            } catch (err) {
-              addOutputMessage({ type: "error", text: `Erro ao salvar ${f.filePath}: ${(err as Error).message}` });
+              originalContent = await readFileContent(f.filePath);
+            } catch {
+              exists = false;
             }
+
+            if (!exists) {
+              await createFileWithContent(f.filePath, f.proposedContent);
+              addOutputMessage({ type: "success", text: `Novo arquivo criado via AI Studio: ${f.filePath}` });
+              refreshFileTree();
+            } else {
+              setPendingReviewActions([
+                ...(pendingReviewActions || []),
+                {
+                  action: "CREATE_FILE",
+                  path: f.filePath,
+                  content: f.proposedContent,
+                }
+              ]);
+              addOutputMessage({ type: "info", text: `Edição capturada via AI Studio aguardando revisão: ${f.filePath}` });
+            }
+          } catch (err) {
+            console.error(`Erro ao processar review do AI Studio: ${f.filePath}`, err);
           }
-          const fileList = normalizedFiles.map((f) => f.filePath).join(", ");
+        }
+
+        let rawGeminiResponse = result.code || "";
+        if (!rawGeminiResponse && result.files) {
+          rawGeminiResponse = result.files.map(f => `FILE: ${f.name}\n\`\`\`\n${f.content}\n\`\`\``).join("\n\n");
+        }
+
+        if (isManualChat) {
+          // CHAT MANUAL: 1. Exibe a resposta BRUTA do Gemini imediatamente.
           setMessages((prev) => [
             ...prev,
             {
               role: "assistant",
-              content: `**Checklist em fases criado automaticamente:** ${fileList}. Os arquivos já estão no projeto em **docs/**.`,
+              content: rawGeminiResponse || "Resposta recebida.",
             },
           ]);
-          addOutputMessage({ type: "success", text: `Checklist inserido no projeto (${normalizedFiles.length} arquivo(s) em docs/).` });
-          refreshFileTree().then(() => getChecklistProgress().then(setProgress));
-        } else {
-          const codeFilesOnly = normalizedFiles.filter((f) => !isChecklistPhaseFile(f.filePath));
-          const filesToPropose = codeFilesOnly.length > 0 ? codeFilesOnly : normalizedFiles;
-          proposeChangesFromChat(filesToPropose, {
-            phaseLines: phaseLines ?? (task ? [task.taskLine] : undefined),
-          });
-          const fileList = filesToPropose.map((f) => f.filePath).join(", ");
-          let assistantContent = `**O AI Studio concluiu a tarefa e gerou os arquivos:** ${fileList}. Revise as alterações no diff e aceite para salvar no projeto.`;
-          try {
-            const analyses: string[] = [];
-            for (const f of filesToPropose) {
-              try {
-                const originalContent = await readFileContent(f.filePath);
-                const analysis = await compareCodeChanges({
-                  filePath: f.filePath,
-                  originalContent,
-                  newContent: f.proposedContent,
-                  taskDescription: task?.taskDescription ?? null,
-                });
-                if (analysis.trim()) {
-                  analyses.push(`**${f.filePath}:** ${analysis.trim()}`);
+
+          // 2. OTIMIZAÇÃO SILENCIOSA: Chama o Analista em background apenas para gerar o Painel de Revisão [EVA_ACTION]
+          // Não atualizamos a mensagem do chat para não "interferir" no texto que o usuário recebeu.
+          (async () => {
+            try {
+              const checklistContext = await getChecklistContentForContext();
+              const projectContext =
+                directoryHandle && fileTree.length > 0
+                  ? await getProjectContext(directoryHandle, fileTree)
+                  : "";
+
+              addOutputMessage({ type: "info", text: "Gerando ações de revisão..." });
+              const optimized = await applyImplementation({
+                userRequest: prompt,
+                geminiOutput: rawGeminiResponse,
+                projectId: folderName ?? "unknown",
+                // @ts-ignore - Estendendo payload para incluir contextos para o Analista
+                projectContext,
+                checklistContext,
+              });
+
+              if (optimized.content) {
+                const actions = parseEvaActions(optimized.content);
+                if (actions.length > 0) {
+                  // Só pede review se houver edições de arquivos existentes ou movimentações
+                  let needsReview = false;
+                  for (const action of actions) {
+                    if (action.action === 'PATCH_FILE') {
+                      needsReview = true;
+                      break;
+                    }
+                    if (action.action === 'CREATE_FILE') {
+                      try {
+                        await readFileContent(action.path);
+                        needsReview = true; // Arquivo existe, é edição
+                        break;
+                      } catch {
+                        // Arquivo não existe, é criação
+                      }
+                    }
+                  }
+
+                  if (needsReview) {
+                    setPendingReviewActions(actions);
+                  } else {
+                    // Se for só criação/diretório/comando, executa direto
+                    await executeEvaActions(optimized.content);
+                    addOutputMessage({ type: "success", text: "Estrutura inicial implementada automaticamente." });
+                  }
                 }
-              } catch {
-                /* Arquivo novo ou erro ao ler: pula análise */
+              }
+            } catch (err) {
+              console.warn("Erro na otimização silenciosa:", err);
+            }
+          })();
+
+          // Tenta capturar mudanças para o Code Review
+          await applyCodeFromResponse(rawGeminiResponse);
+        } else {
+          // TAREFA AUTOMÁTICA: Pós-processa o output do Gemini usando o Analista (Groq)
+          addOutputMessage({ type: "info", text: "Otimizando implementação com o Analista..." });
+          const optimized = await applyImplementation({
+            userRequest: prompt,
+            geminiOutput: rawGeminiResponse,
+            projectId: folderName ?? "unknown",
+          });
+
+          if (optimized.content) {
+            // 1. Extrai as ações [EVA_ACTION] geradas pelo Analista (PATCH_FILE, etc.)
+            const actions = parseEvaActions(optimized.content);
+
+            if (actions.length > 0) {
+              let needsReview = false;
+              for (const action of actions) {
+                if (action.action === 'PATCH_FILE') {
+                  needsReview = true;
+                  break;
+                }
+                if (action.action === 'CREATE_FILE') {
+                  try {
+                    await readFileContent(action.path);
+                    needsReview = true;
+                    break;
+                  } catch { }
+                }
+              }
+
+              if (needsReview) {
+                setPendingReviewActions(actions);
+              } else {
+                await executeEvaActions(optimized.content);
+                addOutputMessage({ type: "success", text: "Mudanças automáticas aplicadas." });
               }
             }
-            if (analyses.length > 0) {
-              assistantContent += `\n\n**Análise das alterações (Llama):**\n${analyses.join("\n\n")}`;
-            }
-          } catch {
-            /* Falha na análise: mantém mensagem básica */
+
+            // 2. Filtra o conteúdo para o chat
+            const chatDisplayContent = optimized.content
+              .split('\n')
+              .filter(line => !line.trim().startsWith('[EVA_ACTION]'))
+              .join('\n')
+              .replace(/^Parecer:\s*/i, "")
+              .replace(/```[\s\S]*?```/g, "")
+              .trim();
+
+            setMessages((prev) => [
+              ...prev,
+              {
+                role: "assistant",
+                content: chatDisplayContent || "Implementação finalizada com sucesso."
+              }
+            ]);
           }
-          setMessages((prev) => [
-            ...prev,
-            { role: "assistant", content: assistantContent },
-          ]);
-          addOutputMessage({ type: "success", text: `Código recebido do AI Studio (${validFiles.length} arquivo(s)). Revise o diff.` });
         }
+
+        refreshFileTree();
+        addOutputMessage({ type: "success", text: "Processamento concluído." });
       } catch (err) {
-        addOutputMessage({ type: "error", text: `Erro ao enviar/receber do AI Studio: ${(err as Error).message}` });
+        addOutputMessage({ type: "error", text: `Falha no processamento: ${(err as Error).message}` });
       } finally {
         setLoadingAIStudio(false);
       }
     },
     [
       directoryHandle,
+      folderName,
       addOutputMessage,
       setCurrentChecklistTask,
-      proposeChangesFromChat,
-      createFileWithContent,
+      executeEvaActions,
       refreshFileTree,
-      getChecklistProgress,
-      readFileContent,
-      compareCodeChanges,
+      createFileWithContent,
+      setPendingReviewActions,
     ]
   );
+
 
   /** Envia automaticamente a próxima tarefa do checklist ao AI Studio (quando não há prompt explícito na resposta do Groq). */
   const sendNextTaskToAIStudioIfAny = useCallback(async () => {
@@ -218,13 +332,8 @@ export function ChatSidebar() {
       const checklistContent = openChecklist ? openChecklist.content : await readChecklist();
       const nextTask = await getNextTaskFromContent(checklistContent);
       if (!nextTask) return;
-      const projectContext =
-        fileTree.length > 0 ? await getProjectContext(directoryHandle, fileTree) : "";
-      const prompt = buildPromptForAIStudio(nextTask.taskDescription, {
-        taskLine: nextTask.taskLine,
-        projectContext: projectContext || undefined,
-      });
-      await sendTaskToAIStudio(prompt, nextTask, [nextTask.taskLine]);
+      const prompt = nextTask.taskDescription;
+      await sendTaskToAIStudio(prompt, nextTask, []);
     } catch {
       // Silencioso: não interrompe o fluxo do chat
     }
@@ -234,8 +343,6 @@ export function ChatSidebar() {
     openFiles,
     readChecklist,
     getNextTaskFromContent,
-    fileTree,
-    getProjectContext,
     sendTaskToAIStudio,
   ]);
 
@@ -274,14 +381,7 @@ export function ChatSidebar() {
     saveChatMessages(projectIdForStorage, messages);
   }, [projectIdForStorage, messages]);
 
-  useEffect(() => {
-    if (!pendingAutocura) return;
-    setMessages((prev) => [
-      ...prev,
-      { role: "assistant", content: pendingAutocura.content, isAutocura: true },
-    ]);
-    setPendingAutocura(null);
-  }, [pendingAutocura, setPendingAutocura]);
+
 
   const getChecklistContentForContext = async (): Promise<string> => {
     if (activeFile?.path === "checklist.md") return activeFile.content;
@@ -293,22 +393,120 @@ export function ChatSidebar() {
     }
   };
 
-  const handleImplement = useCallback(
-    (filePath: string, proposedContent: string) => {
-      setCurrentPhaseLines(null);
-      proposeChangeFromChat(filePath, proposedContent);
+  /**
+   * Função de Captura de Código para Review (IDE EVA)
+   * Detecta blocos de código e envia para a fila de revisão ou salva automaticamente.
+   */
+  const applyCodeFromResponse = useCallback(
+    async (responseText: string) => {
+      if (!directoryHandle) return;
+
+      // Regra de Ouro: Ignora prompst de comando do sistema para evitar auto-save acidental de exemplos.
+      if (
+        responseText.includes("[EVA_ACTION]") ||
+        responseText.includes("REGRAS DE RETORNO") ||
+        responseText.includes("REGRAS DE RESPOSTA") ||
+        responseText.includes("REGRAS DE OURO")
+      ) {
+        return;
+      }
+
+      const actionsToReview: EvaAction[] = [];
+
+      // Regex Mestre provido pelo Usuário: captura caminho limpo e o código
+      const fileRegex = /(?:FILE:|Ficheiro:|File:|\/\/|\/\*|#)\s*([a-zA-Z0-9_\-\/.]+\.[a-zA-Z0-9]+)(?:.*?)[\r\n]+\`\`\`(?:\w+)?[\r\n]([\s\S]*?)\`\`\`/g;
+
+      let match;
+      while ((match = fileRegex.exec(responseText)) !== null) {
+        const filePath = match[1].trim();
+        const codeContent = match[2];
+
+        if (!filePath || filePath.includes("caminho/do/arquivo") || filePath.toLowerCase().includes("exemplo")) continue;
+
+        try {
+          const pathNorm = filePath.replace(/\\/g, "/").replace(/^\/+/, "").trim();
+          let exists = true;
+
+          try {
+            await readFileContent(pathNorm);
+          } catch {
+            exists = false;
+          }
+
+          if (!exists) {
+            // Arquivo novo: Auto-Save Silencioso
+            await createFileWithContent(pathNorm, codeContent.trim());
+            addOutputMessage({ type: "success", text: `Novo arquivo criado via auto-save: ${pathNorm}` });
+            refreshFileTree();
+          } else {
+            // Arquivo existente: Envia para o Modal Review Interativo
+            actionsToReview.push({
+              action: "CREATE_FILE",
+              path: pathNorm,
+              content: codeContent.trim(),
+            });
+          }
+
+        } catch (error) {
+          console.error(`[EVA-AUTO] Erro ao processar arquivo ${filePath}:`, error);
+        }
+      }
+
+      if (actionsToReview.length > 0) {
+        // Envia as ações pendentes para o painel de revisão e avisa o usuário
+        setPendingReviewActions(actionsToReview);
+        addOutputMessage({ type: "warning", text: `Substituições de arquivos aguardando sua revisão e aprovação.` });
+      }
     },
-    [proposeChangeFromChat, setCurrentPhaseLines]
+    [directoryHandle, readFileContent, createFileWithContent, addOutputMessage, refreshFileTree, setPendingReviewActions]
+  );
+
+
+  const handleGenerateSnapshot = async () => {
+    if (!directoryHandle) {
+      addOutputMessage({ type: "error", text: "Abra uma pasta antes de gerar o contexto." });
+      return;
+    }
+    setLoadingContext(true);
+    try {
+      addOutputMessage({ type: "info", text: "Gerando snapshot do projeto..." });
+      const rawContext = await getProjectContext(directoryHandle, fileTree);
+      const snapshotPrompt = `CONTEXTO DO PROJETO (MIGRAÇÃO DE CHAT)\n\nEstou iniciando uma nova sessão para continuar o desenvolvimento deste projeto.\nAbaixo está a estrutura atual e o código dos arquivos.\n\n${rawContext}\n\nINSTRUÇÃO:\nAnalise o projeto acima. Não gere código agora. Apenas responda: "Contexto Carregado. Qual a próxima tarefa?"`;
+      await navigator.clipboard.writeText(snapshotPrompt);
+      addOutputMessage({ type: "success", text: "Contexto copiado! Cole em um novo chat do Gemini." });
+    } catch (err) {
+      addOutputMessage({ type: "error", text: "Erro ao gerar contexto: " + (err as Error).message });
+    } finally {
+      setLoadingContext(false);
+    }
+  };
+
+  const handleImplement = useCallback(
+    async (filePath: string, proposedContent: string) => {
+      try {
+        await createFileWithContent(filePath, proposedContent);
+        addOutputMessage({ type: "success", text: `Arquivo salvo: ${filePath}` });
+        await refreshFileTree();
+      } catch (err) {
+        addOutputMessage({ type: "error", text: `Erro ao salvar ${filePath}: ${(err as Error).message}` });
+      }
+    },
+    [createFileWithContent, addOutputMessage, refreshFileTree]
   );
 
   const handleImplementAll = useCallback(
-    (files: { filePath: string; content: string }[]) => {
-      proposeChangesFromChat(
-        files.map((f) => ({ filePath: f.filePath, proposedContent: f.content })),
-        { phaseLines: currentPhaseLines ?? undefined }
-      );
+    async (files: { filePath: string; content: string }[]) => {
+      for (const f of files) {
+        try {
+          await createFileWithContent(f.filePath, f.content);
+        } catch (err) {
+          addOutputMessage({ type: "error", text: `Erro ao salvar ${f.filePath}: ${(err as Error).message}` });
+        }
+      }
+      addOutputMessage({ type: "success", text: `${files.length} arquivos implementados.` });
+      await refreshFileTree();
     },
-    [proposeChangesFromChat, currentPhaseLines]
+    [createFileWithContent, addOutputMessage, refreshFileTree]
   );
 
   const CONTINUATION_PROMPT =
@@ -337,7 +535,7 @@ export function ChatSidebar() {
           ? await getProjectContext(directoryHandle, fileTree)
           : "";
       const reply = await chatWithAnalyst({
-        provider: "ollama",
+        provider: "groq",
         messages: historyWithContinuation,
         projectId,
         projectContext: projectContext || undefined,
@@ -358,8 +556,9 @@ export function ChatSidebar() {
         }
         return next;
       });
+      applyCodeFromResponse(mergedContent);
       executeEvaActions(reply.content);
-      const promptForAIStudio = extractPromptFromAssistantMessage(mergedContent);
+      const promptForAIStudio = extractRawPrompt(mergedContent);
       if (promptForAIStudio) {
         sendTaskToAIStudio(promptForAIStudio);
       } else {
@@ -397,9 +596,6 @@ export function ChatSidebar() {
     const text = input.trim();
     if ((!text && imgs.length === 0) || loading) return;
 
-    // Proativo: solicita permissão de escrita no clique
-    await requestWritePermission();
-
     setInput("");
     setPendingImages([]);
     const userMsg: ChatMessage = {
@@ -413,79 +609,12 @@ export function ChatSidebar() {
     abortControllerRef.current = controller;
 
     try {
-      const history = [...messages, userMsg];
-      const openFileContext =
-        activeFile != null
-          ? { path: activeFile.path, content: activeFile.content }
-          : null;
-      const checklistContext = directoryHandle ? await getChecklistContentForContext() : "";
-      const projectContext =
-        directoryHandle && fileTree.length > 0
-          ? await getProjectContext(directoryHandle, fileTree)
-          : "";
+      // 2. Dispara diretamente para o AI Studio com o texto BRUTO do usuário
+      // O usuário solicitou que o Groq não interfira e que seja enviado apenas o que ele escreveu.
+      await sendTaskToAIStudio(text, undefined, undefined, userMsg.images, true);
 
-      const reply = await chatWithAnalyst({
-        provider: "ollama",
-        messages: history,
-        images: imgs.length > 0 ? imgs.map((i) => ({ base64: i.base64, mimeType: i.mimeType })) : undefined,
-        projectId,
-        projectContext: projectContext || undefined,
-        openFileContext,
-        checklistContext: checklistContext || undefined,
-        signal: controller.signal,
-      });
-
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: reply.content, isTruncated: reply.isTruncated },
-      ]);
-      executeEvaActions(reply.content);
-      const promptForAIStudio = extractPromptFromAssistantMessage(reply.content);
-      const isFirstCommand = messages.length === 0;
-      const wantsProjectCreation = isProjectCreationRequest(userMsg.content);
-      const requestedPhase = getRequestedPhaseNumber(userMsg.content);
-      if (promptForAIStudio) {
-        // Envia as imagens originais do usuário se houver
-        const userImages = userMsg.images;
-        sendTaskToAIStudio(promptForAIStudio, undefined, undefined, userImages);
-      } else if (isFirstCommand && wantsProjectCreation) {
-        if (!directoryHandle) {
-          addOutputMessage({
-            type: "warning",
-            text: "Abra uma pasta do projeto (Abrir pasta) antes de criar o plano em fases. O checklist será salvo em docs/fase-1.md, docs/fase-2.md, etc.",
-          });
-        } else {
-          sendTaskToAIStudio(buildProjectPlanPrompt(userMsg.content));
-        }
-      } else if (requestedPhase != null && directoryHandle) {
-        const checklistContent = await getChecklistContentForContext();
-        const phaseTasks = await getTasksForPhase(checklistContent ?? "", requestedPhase);
-        if (phaseTasks.length > 0) {
-          const prompt = buildPromptForAIStudioPhase(phaseTasks);
-          await sendTaskToAIStudio(prompt, undefined, phaseTasks.map((t) => t.taskLine));
-        } else {
-          addOutputMessage({
-            type: "info",
-            text: `Nenhuma tarefa pendente na Fase ${requestedPhase}. Todas já foram concluídas ou a fase não existe.`,
-          });
-          sendNextTaskToAIStudioIfAny();
-        }
-      } else {
-        sendNextTaskToAIStudioIfAny();
-      }
     } catch (err) {
-      if (err instanceof Error && err.name === "AbortError") {
-        setMessages((prev) => [
-          ...prev,
-          { role: "assistant", content: "_Resposta interrompida pelo usuário._" },
-        ]);
-        return;
-      }
       const errorMsg = err instanceof Error ? err.message : "Erro ao enviar mensagem.";
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: `Erro: ${errorMsg}` },
-      ]);
       addOutputMessage({ type: "error", text: errorMsg });
     } finally {
       abortControllerRef.current = null;
@@ -504,7 +633,6 @@ export function ChatSidebar() {
       addOutputMessage({ type: "error", text: "Abra uma pasta antes de adicionar tarefas ao checklist." });
       return;
     }
-    await requestWritePermission();
     setLoadingTasks(true);
     try {
       const checklistContent =
@@ -533,7 +661,6 @@ export function ChatSidebar() {
       await writeChecklist(newContent);
       const nextTask = await getNextTaskFromContent(newContent);
       if (nextTask) setCurrentChecklistTask(nextTask);
-      setCurrentPhaseLines(null);
       getChecklistProgress().then(setProgress);
       addOutputMessage({
         type: "success",
@@ -549,31 +676,39 @@ export function ChatSidebar() {
     }
   };
 
-  useEffect(() => {
-    if (nextPendingTask && directoryHandle) getChecklistProgress().then(setProgress);
-    if (!nextPendingTask && !directoryHandle) setProgress(null);
-  }, [nextPendingTask, directoryHandle, getChecklistProgress]);
 
   useEffect(() => {
-    const unreg = onChecklistUpdated(() => getChecklistProgress().then(setProgress));
-    return unreg;
-  }, [onChecklistUpdated, getChecklistProgress]);
+    if (!directoryHandle) {
+      setProgress(null);
+      return;
+    }
+    getChecklistProgress().then(setProgress);
+  }, [directoryHandle, getChecklistProgress, nextPendingTask]);
 
   return (
-    <div className="flex flex-col h-full min-h-0 bg-ds-surface-light dark:bg-ds-surface overflow-hidden">
-      <div className="flex items-center justify-between gap-2 px-2 py-2 border-b border-ds-border-light dark:border-ds-border shrink-0">
-        <h2 className="panel-title flex items-center gap-1.5">
-          <MessageCircle className="w-3.5 h-3.5" aria-hidden />
-          Chat EVA
-        </h2>
-        {activeFile && (
-          <span
-            className="text-[10px] text-ds-text-secondary-light dark:text-ds-text-secondary truncate max-w-[100px]"
-            title={activeFile.path}
+    <div className="flex flex-col h-full bg-ds-surface-light dark:bg-ds-surface border-l border-ds-border-light dark:border-ds-border relative overflow-hidden">
+      <div className="flex items-center justify-between h-14 px-4 border-b border-white/[0.06] bg-black/40">
+        <div className="flex items-center gap-2">
+          <MessageSquare className="w-4 h-4 text-white/40" />
+          <h2 className="text-xs font-semibold tracking-wider text-white/50 uppercase">Chat EVA</h2>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleGenerateSnapshot}
+            disabled={loadingContext}
+            className={`p-1.5 hover:bg-white/5 rounded-md transition-colors ${loadingContext ? 'text-ds-accent-neon animate-spin' : 'text-white/40 hover:text-ds-accent-neon'}`}
+            title="Gerar Contexto para Novo Chat (snapshot)"
           >
-            {activeFile.name}
-          </span>
-        )}
+            <RotateCcw className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={() => setMessages([])}
+            className="p-1.5 hover:bg-white/5 rounded-md transition-colors text-white/40 hover:text-white/70"
+            title="Limpar chat"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
 
       <div
@@ -627,13 +762,28 @@ export function ChatSidebar() {
                   ) : null}
                 </>
               ) : (
-                <ChatCodeBlock
-                  content={m.content}
-                  onImplement={handleImplement}
-                  onImplementAll={handleImplementAll}
-                  className="text-ds-text-primary-light dark:text-ds-text-primary"
-                  buttonLabel={m.isAutocura ? "Aplicar Autocura" : "Implementar Mudanças"}
-                />
+                <>
+                  {m.content.includes("[EVA_ACTION]") ? (
+                    <div className="flex flex-col gap-1.5 py-1">
+                      <div className="flex items-center gap-2 text-ds-text-secondary-light dark:text-ds-text-secondary italic text-xs opacity-90">
+                        <Settings className="w-3.5 h-3.5 animate-pulse text-ds-accent-neon" />
+                        <span>⚙️ Instrução técnica gerada e enviada para a extensão.</span>
+                      </div>
+                      {/* Conteúdo oculto para que a extensão ainda possa ler do DOM se necessário */}
+                      <div className="hidden" data-technical-prompt="true">
+                        {m.content}
+                      </div>
+                    </div>
+                  ) : (
+                    <ChatCodeBlock
+                      content={m.content}
+                      onImplement={handleImplement}
+                      onImplementAll={handleImplementAll}
+                      className="text-ds-text-primary-light dark:text-ds-text-primary"
+                      buttonLabel={m.isAutocura ? "Aplicar Autocura" : "Implementar Mudanças"}
+                    />
+                  )}
+                </>
               )}
             </div>
             <div
@@ -706,6 +856,28 @@ export function ChatSidebar() {
           onStop={handleStopGenerating}
         />
       </div>
-    </div>
+
+      {pendingReviewActions && (
+        <ImplementationReview
+          actions={pendingReviewActions}
+          onConfirm={async () => {
+            const actionsToExecute = pendingReviewActions;
+            const content = actionsToExecute.map(a => {
+              if (a.action === 'CREATE_FILE') return `[EVA_ACTION] CREATE_FILE path="${a.path}"\n${a.content}\n[/EVA_ACTION]`;
+              if (a.action === 'PATCH_FILE') return `[EVA_ACTION] PATCH_FILE path="${a.path}" search="${a.search}" replace="${a.replace}" [/EVA_ACTION]`;
+              if (a.action === 'CREATE_DIRECTORY') return `[EVA_ACTION] CREATE_DIRECTORY path="${a.path}" [/EVA_ACTION]`;
+              if (a.action === 'MOVE_FILE') return `[EVA_ACTION] MOVE_FILE from="${a.from}" to="${a.to}" [/EVA_ACTION]`;
+              if (a.action === 'RUN_COMMAND') return `[EVA_ACTION] RUN_COMMAND command="${a.command}" [/EVA_ACTION]`;
+              return '';
+            }).join('\n');
+
+            setPendingReviewActions(null);
+            await executeEvaActions(content);
+            await refreshFileTree();
+          }}
+          onCancel={() => setPendingReviewActions(null)}
+        />
+      )}
+    </div >
   );
 }

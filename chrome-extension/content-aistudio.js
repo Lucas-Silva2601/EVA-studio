@@ -212,10 +212,10 @@
     const hasJsHint = first.includes("function ") || first.includes("=>") || first.includes("const ") || first.includes("export ");
     if (hasCssHint && (first.includes("<style") || (hasBracesAndColon && !hasJsHint))) return "style.css";
     if (first.includes("import react") || first.includes('from "react"') || first.includes("from 'react'")) return "App.jsx";
+    if (first.includes("def ") || (first.includes("import ") && !first.includes("react"))) return "script.py";
     if (first.includes("function ") || (first.includes("const ") && first.includes("=>")) || first.includes("export ")) return "script.js";
     if (first.includes("getelementbyid") || first.includes("getcontext") || first.includes("queryselector") || first.includes("addeventlistener") || (first.includes("canvas") && first.includes("."))) return "script.js";
     if (first.includes("setinterval") || first.includes("requestanimationframe") || first.includes("addEventListener")) return "script.js";
-    if (first.includes("def ") || (first.includes("import ") && !first.includes("react"))) return "script.py";
     if (first.startsWith("{") || first.startsWith("[")) return "data.json";
     if (first.startsWith("# ") || first.includes("## ") || first.includes("- [ ]") || first.includes("- [x]")) return "checklist.md";
     return null;
