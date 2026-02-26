@@ -1,14 +1,13 @@
 /**
- * EVA Studio Bridge v3.1 - Content Script (Google Gemini)
+ * EVA Studio Bridge v3.2 - Content Script (Google Gemini)
  * Executa em https://gemini.google.com/*
  *
- * FUNCIONALIDADE:
- * - Registra esta aba como "aba do Gemini" no background
- * - Recebe prompt do background (EVA_PROMPT_INJECT), insere no input e envia
- * - MutationObserver: captura resposta quando Stop sumir ou Share aparecer
- * - Extrai blocos de código e FILE: path/filename; envia EVA_CODE_CAPTURED ao background
- *
- * Protocolo: EVA_PROMPT_SEND (IDE -> Extensão), EVA_CODE_RETURNED (Extensão -> IDE).
+ * MELHORIAS v3.2:
+ * - Deduplicação robusta: hash do conteúdo completo
+ * - Captura do CONTEXTO PRÉ-BLOCO do DOM para detectar nomes de arquivo
+ * - inferFilenameFromContent expandida: TypeScript, TSX, YAML, SQL, etc.
+ * - langToExt expandida para 20+ formatos
+ * - Suporte a @ em paths (TypeScript aliases)
  */
 (function () {
   "use strict";
@@ -141,18 +140,52 @@
     return false;
   }
 
-  // --- Parsing Helpers ---
+  /** Regex para caminho com suporte a @, ( e ) */
+  const PATH_REGEX = /(?:FILE|filename|Arquivo|Caminho)\s*:\s*([@a-zA-Z0-9._\-/()]+)/i;
+
   function parseFileFromFirstLine(code) {
     const first = (code || "").split("\n")[0] || "";
-    const match = first.match(/(?:FILE|filename)\s*:\s*([^\s\n]+)/i);
+    const match = first.match(PATH_REGEX);
     return match ? match[1].trim() : null;
   }
 
   function parseFileFromContent(code) {
     const lines = (code || "").split("\n");
-    for (let i = 0; i < Math.min(lines.length, 10); i++) {
-      const match = (lines[i] || "").match(/(?:FILE|filename)\s*:\s*([a-zA-Z0-9._\-/]+)/i);
+    for (let i = 0; i < Math.min(lines.length, 15); i++) {
+      const match = (lines[i] || "").match(PATH_REGEX);
       if (match) return match[1].trim();
+    }
+    return null;
+  }
+
+  function extractPathFromPreElement(preElement) {
+    const knownExts = new Set([
+      "ts", "tsx", "js", "jsx", "mjs", "json", "html", "css", "scss", "sass",
+      "py", "rb", "go", "rs", "java", "kt", "md", "mdx", "yaml", "yml",
+      "sh", "bash", "sql", "graphql", "prisma", "vue", "svelte", "astro"
+    ]);
+    function isValidPath(c) {
+      if (!c) return false;
+      const ext = (c.match(/\.([a-zA-Z0-9]{1,10})$/) || [])[1];
+      return ext ? knownExts.has(ext.toLowerCase()) : false;
+    }
+    let sibling = preElement ? preElement.previousElementSibling : null;
+    let count = 0;
+    while (sibling && count < 5) {
+      const text = (sibling.textContent || "").trim();
+      if (text.length > 0 && text.length < 300) {
+        const m1 = text.match(/(?:FILE|Arquivo|Caminho|filename)\s*:\s*([@a-zA-Z0-9._\-/()]+)/i);
+        if (m1 && isValidPath(m1[1])) return m1[1];
+        const m2 = text.match(/`([@a-zA-Z0-9._\-/()]+\.[a-zA-Z0-9]{1,10})`/);
+        if (m2 && isValidPath(m2[1])) return m2[1];
+        const m3 = text.match(/\*{1,2}([@a-zA-Z0-9._\-/()]+\.[a-zA-Z0-9]{1,10})\*{1,2}/);
+        if (m3 && isValidPath(m3[1])) return m3[1];
+        const lastLine = text.split(/\n/).pop() || "";
+        const m4 = lastLine.match(/^#*\s*([@a-zA-Z0-9._\-/()]+\.[a-zA-Z0-9]{1,10})\s*:?\s*$/);
+        if (m4 && isValidPath(m4[1])) return m4[1];
+      }
+      sibling = sibling.previousElementSibling;
+      count++;
     }
     return null;
   }
@@ -160,24 +193,53 @@
   function inferFilenameFromContent(code) {
     const trimmed = (code || "").trim();
     if (!trimmed) return null;
-    const first = trimmed.slice(0, 400).toLowerCase();
-    if (first.includes("<!doctype") || first.startsWith("<html")) return "index.html";
-    if (first.startsWith("{") && first.includes(":") && first.includes("}")) return "data.json";
-    if (first.startsWith("# ") || first.includes("## ")) return "README.md";
-    if (first.includes("import ") && first.includes("from ")) return "script.js";
+    const first = trimmed.slice(0, 800).toLowerCase();
+    if (first.includes("<!doctype html") || first.startsWith("<html")) return "index.html";
+    const hasReact = first.includes("import react") || first.includes('from "react"') || first.includes("from 'react'");
+    const hasTs = first.includes(": string") || first.includes(": number") || first.includes(": boolean") || first.includes("interface ") || first.includes(": void");
+    const hasJsx = first.includes("return (") || /<[A-Z]/.test(trimmed.slice(0, 800)) || first.includes("</div>");
+    if (hasReact && hasTs) return "App.tsx";
+    if (hasReact) return "App.jsx";
+    if (hasJsx && hasTs) return "component.tsx";
+    if (hasJsx) return "component.jsx";
+    if (hasTs && (first.includes("export ") || first.includes("function "))) return "index.ts";
+    if (first.includes("@mixin") || first.includes("@include")) return "style.scss";
+    const hasCss = first.includes("{") && first.includes(":") && (first.includes("px") || first.includes("color:") || first.includes("margin:"));
+    const hasJs = first.includes("function ") || first.includes("=>") || first.includes("export ");
+    if (hasCss && !hasJs) return "style.css";
+    if (hasJs || first.includes("module.exports")) return "script.js";
+    if (first.includes("def ") || first.includes("print(") || first.includes("if __name__")) return "script.py";
+    if ((first.startsWith("{") && trimmed.endsWith("}")) || (first.startsWith("[") && trimmed.endsWith("]"))) return "data.json";
+    if (/^[\w-]+:\s+\S/.test(first) || first.includes("- name:")) return "config.yaml";
+    if (first.startsWith("#!/bin/bash") || first.startsWith("#!/bin/sh")) return "script.sh";
+    if (first.includes("select ") && first.includes("from ")) return "query.sql";
+    if (first.includes("datasource db") || first.includes("generator client")) return "schema.prisma";
+    if (first.startsWith("# ") || first.includes("- [ ]")) return first.includes("- [ ]") ? "checklist.md" : "README.md";
     return null;
   }
 
   function stripFileLine(code) {
     const lines = (code || "").split("\n");
-    for (let i = 0; i < Math.min(lines.length, 10); i++) {
-      if (/(?:FILE|filename)\s*:\s*/i.test(lines[i] || "")) return lines.slice(i + 1).join("\n").trimStart();
+    for (let i = 0; i < Math.min(lines.length, 15); i++) {
+      if (/(?:FILE|filename|Arquivo|Caminho)\s*:\s*/i.test(lines[i] || "")) return lines.slice(i + 1).join("\n").trimStart();
     }
     return code || "";
   }
 
   function langToExt(lang) {
-    const map = { js: "js", javascript: "js", jsx: "jsx", ts: "ts", typescript: "ts", tsx: "tsx", py: "py", python: "py", html: "html", css: "css", json: "json", md: "md" };
+    const map = {
+      js: "js", javascript: "js", jsx: "jsx",
+      ts: "ts", typescript: "ts", tsx: "tsx",
+      py: "py", python: "py",
+      html: "html", css: "css", scss: "scss", sass: "scss", less: "less",
+      json: "json", md: "md", markdown: "md",
+      yaml: "yaml", yml: "yaml",
+      sh: "sh", bash: "sh", shell: "sh",
+      sql: "sql", graphql: "graphql", gql: "graphql",
+      prisma: "prisma", toml: "toml",
+      go: "go", rs: "rs", rust: "rs", rb: "rb", java: "java",
+      vue: "vue", svelte: "svelte", astro: "astro",
+    };
     return map[(lang || "").toLowerCase()] || "";
   }
 
@@ -191,11 +253,12 @@
 
   function blocksToFiles(blocks) {
     return blocks.map(function (block, i) {
+      const fromDom = block.preElement ? extractPathFromPreElement(block.preElement) : null;
       const pathFromFirstLine = parseFileFromFirstLine(block.code);
       const pathFromContent = pathFromFirstLine || parseFileFromContent(block.code);
-      const inferred = inferFilenameFromContent(block.code);
+      const inferred = fromDom || pathFromContent || inferFilenameFromContent(block.code);
       const ext = langToExt(block.language);
-      const name = pathFromContent || inferred || (ext ? "file_" + i + "." + ext : "file_" + i + ".txt");
+      const name = inferred || (ext ? "file_" + i + "." + ext : "file_" + i + ".txt");
       const content = pathFromContent ? stripFileLine(block.code) : block.code.trim();
       return { name, content };
     });
@@ -204,34 +267,57 @@
   function extractCodeBlocks() {
     const blocks = [];
     const seen = new Set();
-    function addBlock(code, language) {
-      const key = (code || "").trim().slice(0, 80);
-      if (!key || seen.has(key)) return;
+    function hashContent(code) {
+      let h = 5381;
+      for (let i = 0; i < code.length; i++) {
+        h = ((h << 5) + h) ^ code.charCodeAt(i);
+        h = h >>> 0;
+      }
+      return h.toString(36);
+    }
+    function addBlock(code, language, preElement) {
+      const trimmedCode = (code || "").trim();
+      if (!trimmedCode || trimmedCode.length < 10) return;
+      const key = hashContent(trimmedCode);
+      if (seen.has(key)) return;
       seen.add(key);
-      blocks.push({ code: (code || "").trim(), language: language || undefined });
+      blocks.push({ code: trimmedCode, language: language || undefined, preElement: preElement || null });
     }
 
-    const codeElements = document.querySelectorAll("pre code, code-block, .code-block");
-    codeElements.forEach((el) => {
-      const text = el.textContent || "";
-      let lang = "";
-      const cls = el.className || el.parentElement?.className || "";
-      const match = cls.match(/language-(\w+)/);
-      if (match) lang = match[1];
-
-      if (text.trim().length > 10) addBlock(text, lang);
+    // Estratégia 1: pre code (principal)
+    document.querySelectorAll("pre").forEach((pre) => {
+      const codeEl = pre.querySelector("code");
+      const text = codeEl ? codeEl.textContent : pre.textContent;
+      if (text && text.trim().length > 10) {
+        let lang = "";
+        const cls = (codeEl || pre).className || "";
+        const langMatch = cls.match(/language-([\w-]+)/);
+        if (langMatch) lang = langMatch[1];
+        if (!lang) lang = pre.getAttribute("data-language") || codeEl?.getAttribute("data-language") || "";
+        addBlock(text, lang, pre);
+      }
     });
 
+    // Estratégia 2: code-block, .code-block
+    if (blocks.length === 0) {
+      document.querySelectorAll("code-block, .code-block").forEach((el) => {
+        const text = el.textContent || "";
+        let lang = (el.className || "").match(/language-([\w-]+)/)?.[1] || "";
+        if (text.trim().length > 10) addBlock(text, lang, el.parentElement);
+      });
+    }
+
+    // Estratégia 3: Regex no texto do DOM
     if (blocks.length === 0) {
       const root = document.querySelector("main") || document.body;
       const raw = root.innerText || "";
-      const parts = raw.split(/(?=FILE:\s*)/i);
-      parts.forEach(p => {
-        const trimmed = p.trim();
-        if (trimmed.startsWith("FILE:") && trimmed.length > 30) {
-          addBlock(trimmed, "markdown");
-        }
-      });
+      const fenceRegex = /```([\w-]*)\n([\s\S]*?)```/g;
+      let match;
+      while ((match = fenceRegex.exec(raw)) !== null) {
+        const lang = match[1] || "";
+        const code = match[2]?.trim() || "";
+        if (code.length > 10) addBlock(code, lang, null);
+      }
     }
 
     return blocks;
@@ -346,10 +432,13 @@
     }
 
     try {
-      await new Promise(r => setTimeout(r, 3000)); // Aguarda UI atualizar
-      const blocks = await waitForResponseComplete();
-      const allFiles = blocksToFiles(blocks);
-      const files = allFiles.filter(f => !isSnippetOrCommand(f.content));
+      const rawBlocks = await waitForResponseComplete();
+      const allFiles = blocksToFiles(rawBlocks);
+      const files = allFiles
+        .filter(f => !isSnippetOrCommand(f.content))
+        .map(f => ({ name: f.name, content: f.content })); // Remove preElement (não serializável)
+
+      console.log("[EVA-Gemini] Arquivos capturados:", files.map(f => f.name));
 
       sendToBackground("EVA_CODE_CAPTURED", {
         files: files,

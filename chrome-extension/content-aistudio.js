@@ -1,15 +1,14 @@
 /**
- * EVA Studio Bridge v3.1 - Content Script (Google AI Studio)
+ * EVA Studio Bridge v3.2 - Content Script (Google AI Studio)
  * Executa em https://aistudio.google.com/*
  *
- * FUNCIONALIDADE:
- * - Registra esta aba como "aba do AI Studio" no background
- * - Recebe prompt do background (EVA_PROMPT_INJECT), insere no input e envia
- * - MutationObserver: captura resposta quando Stop sumir ou Share aparecer
- * - Extrai blocos de código e FILE: path/filename; envia EVA_CODE_CAPTURED ao background
- *
- * Protocolo: EVA_PROMPT_SEND (IDE -> Extensão), EVA_CODE_RETURNED (Extensão -> IDE).
- * Seletores: AISTUDIO_SELECTORS abaixo. Se a UI mudar, inspecione (F12) e atualize.
+ * MELHORIAS v3.2:
+ * - Deduplicação robusta: hash MD5 do conteúdo completo (não só os primeiros 80 chars)
+ * - Captura do CONTEXTO PRÉ-BLOCO do DOM para detectar nomes de arquivo
+ * - inferFilenameFromContent expandida: TypeScript, TSX, YAML, SQL, Shell, Prisma, etc.
+ * - langToExt expandida: scss, yaml, sql, sh, bash, prisma, graphql, toml, env, etc.
+ * - parseFileFromContent suporta @ em paths (TypeScript aliases)
+ * - Charset expandido nas regexes de path: @, (, ) para Next.js route groups
  */
 (function () {
   "use strict";
@@ -96,7 +95,7 @@
     sendToBackground("REGISTER_AISTUDIO_TAB", {});
   }
 
-  console.log("[EVA-AIStudio] Script injetado; registrando aba.");
+  console.log("[EVA-AIStudio] Script injetado v3.2; registrando aba.");
   registerTab();
   const REGISTER_INTERVAL_MS = 45000;
   registerInterval = setInterval(registerTab, REGISTER_INTERVAL_MS);
@@ -122,15 +121,12 @@
   function findSendButton() {
     const btn = findFirstVisible(AISTUDIO_SELECTORS.sendButton, true);
     if (btn) return btn;
-
-    // Tenta encontrar por texto "Run" ou "Enviar"
     const allButtons = Array.from(document.querySelectorAll('button:not([disabled])'));
     const runBtn = allButtons.find(b => {
       const txt = (b.textContent || "").trim().toLowerCase();
       return txt === "run" || txt === "executar" || txt === "send" || txt === "enviar";
     });
     if (runBtn) return runBtn;
-
     const form = document.querySelector("form");
     if (form) {
       const formBtn = form.querySelector("button:not([disabled])");
@@ -187,50 +183,239 @@
     return false;
   }
 
+  // ============================================================
+  // UTILITÁRIOS DE EXTRAÇÃO DE NOME DE ARQUIVO (melhorados v3.2)
+  // ============================================================
+
+  /** Regex para caminho de arquivo: suporta @, ( e ) para Next.js route groups e TypeScript aliases */
+  const PATH_REGEX = /(?:FILE|filename|Arquivo|Caminho)\s*:\s*([@a-zA-Z0-9._\-/()]+)/i;
+
   function parseFileFromFirstLine(code) {
     const first = (code || "").split("\n")[0] || "";
-    const match = first.match(/(?:FILE|filename)\s*:\s*([^\s\n]+)/i);
+    const match = first.match(PATH_REGEX);
     return match ? match[1].trim() : null;
   }
 
   function parseFileFromContent(code) {
     const lines = (code || "").split("\n");
-    for (let i = 0; i < Math.min(lines.length, 10); i++) {
-      const match = (lines[i] || "").match(/(?:FILE|filename)\s*:\s*([a-zA-Z0-9._\-/]+)/i);
+    for (let i = 0; i < Math.min(lines.length, 15); i++) {
+      const match = (lines[i] || "").match(PATH_REGEX);
       if (match) return match[1].trim();
     }
     return null;
   }
 
+  /**
+   * Extrai o nome do arquivo a partir do texto ANTES do bloco de código no DOM.
+   * Verifica os últimas 3 elementos irmãos (para suportar Gemini em PT-BR).
+   * Padrões detectados:
+   * - "Aqui está o arquivo `src/main.ts`:"
+   * - "**FILE:** src/main.ts"
+   * - "### src/main.ts"
+   * - "`src/main.ts`:" ou "**src/main.ts**:"
+   */
+  function extractPathFromPreElement(preElement) {
+    // Charset para caminho de arquivo
+    const pathPattern = string => {
+      const m = string.match(/([@a-zA-Z0-9._\-/()]+\.[a-zA-Z0-9]{1,10})/);
+      return m ? m[1] : null;
+    };
+
+    const knownExts = new Set([
+      "ts", "tsx", "js", "jsx", "mjs", "cjs",
+      "json", "html", "css", "scss", "sass", "less",
+      "py", "rb", "go", "rs", "java", "kt", "swift",
+      "md", "mdx", "txt", "yaml", "yml", "toml", "env",
+      "sh", "bash", "zsh", "ps1", "bat", "prisma",
+      "sql", "graphql", "proto", "vue", "svelte", "astro",
+      "config", "lock"
+    ]);
+
+    function isValidPath(candidate) {
+      if (!candidate) return false;
+      const extMatch = candidate.match(/\.([a-zA-Z0-9]{1,10})$/);
+      return extMatch ? knownExts.has(extMatch[1].toLowerCase()) : false;
+    }
+
+    // Percorre os elementos anteriores ao <pre> (até 5 elementos acima)
+    let sibling = preElement.previousElementSibling;
+    let count = 0;
+    while (sibling && count < 5) {
+      const text = (sibling.textContent || "").trim();
+      if (text.length > 0 && text.length < 300) {
+        // Padrão 1: FILE: path ou Arquivo: path (direto)
+        const fromFileKeyword = text.match(/(?:FILE|Arquivo|Caminho|filename)\s*:\s*([@a-zA-Z0-9._\-/()]+)/i);
+        if (fromFileKeyword && isValidPath(fromFileKeyword[1])) return fromFileKeyword[1];
+
+        // Padrão 2: Backtick `path.ext`
+        const fromBacktick = text.match(/`([@a-zA-Z0-9._\-/()]+\.[a-zA-Z0-9]{1,10})`/);
+        if (fromBacktick && isValidPath(fromBacktick[1])) return fromBacktick[1];
+
+        // Padrão 3: **path.ext** (bold markdown renderizado)
+        const fromBold = text.match(/\*{1,2}([@a-zA-Z0-9._\-/()]+\.[a-zA-Z0-9]{1,10})\*{1,2}/);
+        if (fromBold && isValidPath(fromBold[1])) return fromBold[1];
+
+        // Padrão 4: Heading ou linha com apenas o caminho (ex: "### src/index.ts" ou "src/index.ts:")
+        const lastLine = text.split(/\n/).pop() || "";
+        const headingMatch = lastLine.match(/^#*\s*([@a-zA-Z0-9._\-/()]+\.[a-zA-Z0-9]{1,10})\s*:?\s*$/);
+        if (headingMatch && isValidPath(headingMatch[1])) return headingMatch[1];
+
+        // Padrão 5: Frase natural PT-BR "...arquivo src/..." ou "...file src/..."
+        const naturalMatch = text.match(/(?:arquivo|file|ficheiro|here is|aqui está o?)\s+[`"']?([@a-zA-Z0-9._\-/()]+\.[a-zA-Z0-9]{1,10})[`"']?\s*:?/i);
+        if (naturalMatch && isValidPath(naturalMatch[1])) return naturalMatch[1];
+      }
+      sibling = sibling.previousElementSibling;
+      count++;
+    }
+
+    // Também verifica o nó de texto imediatamente antes (sem ser elemento)
+    let node = preElement.previousSibling;
+    if (node && node.nodeType === Node.TEXT_NODE) {
+      const text = (node.textContent || "").trim();
+      if (text.length > 0 && text.length < 200) {
+        const m = text.match(/([@a-zA-Z0-9._\-/()]+\.[a-zA-Z0-9]{1,10})\s*:?\s*$/);
+        if (m && isValidPath(m[1])) return m[1];
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Infere nome de arquivo com extensão correta a partir do conteúdo.
+   * Suporta: HTML, CSS, SCSS, TypeScript, TSX, JSX, Python, JSON, YAML,
+   * Markdown, Shell Script, SQL, Prisma, e outros formatos comuns.
+   */
   function inferFilenameFromContent(code) {
     const trimmed = (code || "").trim();
     if (!trimmed) return null;
-    const first = trimmed.slice(0, 400).toLowerCase();
-    if (first.includes("<!doctype") || first.startsWith("<html") || first.startsWith("<!DOCTYPE")) return "index.html";
+    const first = trimmed.slice(0, 800).toLowerCase();
+
+    // HTML
+    if (first.includes("<!doctype html") || first.startsWith("<html") || first.startsWith("<!doctype")) {
+      return "index.html";
+    }
+
+    // TSX / JSX com React
+    const hasReactImport = first.includes("import react") || first.includes('from "react"') || first.includes("from 'react'");
+    const hasTypescript =
+      first.includes(": string") || first.includes(": number") || first.includes(": boolean") ||
+      first.includes("interface ") || /(:\s*\w+(\[\])?)/.test(first) ||
+      first.includes(": void") || first.includes("readonly ");
+    const hasJsx =
+      first.includes("return (") || first.includes("return(") ||
+      /<[A-Z][A-Za-z]+/.test(trimmed.slice(0, 800)) ||
+      first.includes("</div>") || first.includes("</span>") || first.includes("</p>");
+
+    if (hasReactImport && hasTypescript) return "App.tsx";
+    if (hasReactImport) return "App.jsx";
+    if (hasJsx && hasTypescript) return "component.tsx";
+    if (hasJsx) return "component.jsx";
+
+    // TypeScript puro (sem React)
+    if (hasTypescript && (first.includes("export ") || first.includes("function ") || first.includes("const "))) {
+      return "index.ts";
+    }
+
+    // SCSS / Sass
+    if (first.includes("@mixin") || first.includes("@include") || first.includes("@extend")) {
+      return "style.scss";
+    }
+
+    // CSS
     const hasBracesAndColon = first.includes("{") && first.includes(":");
-    const hasCssHint = first.includes("<style") || first.includes("px") || first.includes("em") || first.includes("rem") || /\d\s*%/.test(first) || first.includes("color:") || first.includes("margin:") || first.includes("padding:") || first.includes("font-size:") || first.includes("width:") || first.includes("height:") || first.includes("background") || first.includes("border:") || first.includes("display:");
+    const hasCssHint = first.includes("px") || first.includes("em") || first.includes("rem") ||
+      /\d\s*%/.test(first) || first.includes("color:") || first.includes("margin:") ||
+      first.includes("padding:") || first.includes("font-size:") || first.includes("width:") ||
+      first.includes("height:") || first.includes("background") || first.includes("border:") || first.includes("display:");
     const hasJsHint = first.includes("function ") || first.includes("=>") || first.includes("const ") || first.includes("export ");
-    if (hasCssHint && (first.includes("<style") || (hasBracesAndColon && !hasJsHint))) return "style.css";
-    if (first.includes("import react") || first.includes('from "react"') || first.includes("from 'react'")) return "App.jsx";
-    if (first.includes("def ") || (first.includes("import ") && !first.includes("react"))) return "script.py";
-    if (first.includes("function ") || (first.includes("const ") && first.includes("=>")) || first.includes("export ")) return "script.js";
-    if (first.includes("getelementbyid") || first.includes("getcontext") || first.includes("queryselector") || first.includes("addeventlistener") || (first.includes("canvas") && first.includes("."))) return "script.js";
-    if (first.includes("setinterval") || first.includes("requestanimationframe") || first.includes("addEventListener")) return "script.js";
-    if (first.startsWith("{") || first.startsWith("[")) return "data.json";
-    if (first.startsWith("# ") || first.includes("## ") || first.includes("- [ ]") || first.includes("- [x]")) return "checklist.md";
+    if (hasCssHint && hasBracesAndColon && !hasJsHint) return "style.css";
+
+    // JavaScript puro
+    if (first.includes("function ") || (first.includes("const ") && first.includes("=>")) || first.includes("export ") || first.includes("module.exports")) {
+      return "script.js";
+    }
+
+    // Python
+    if (first.includes("def ") || first.includes("import ") || first.includes("print(") || first.includes("if __name__")) {
+      return "script.py";
+    }
+
+    // JSON
+    if ((first.startsWith("{") && trimmed.endsWith("}")) || (first.startsWith("[") && trimmed.endsWith("]"))) {
+      return "data.json";
+    }
+
+    // YAML
+    if (/^[\w-]+:\s+\S/.test(first) || first.includes("- name:") || first.includes("version:")) {
+      return "config.yaml";
+    }
+
+    // Shell Script
+    if (first.startsWith("#!/bin/bash") || first.startsWith("#!/bin/sh") || first.startsWith("#!/usr/bin/env bash")) {
+      return "script.sh";
+    }
+
+    // SQL
+    if ((first.includes("select ") && first.includes("from ")) || first.includes("create table") || first.includes("insert into")) {
+      return "query.sql";
+    }
+
+    // Prisma schema
+    if (first.includes("datasource db") || first.includes("generator client") || (first.includes("model ") && first.includes("@@"))) {
+      return "schema.prisma";
+    }
+
+    // Markdown
+    if (first.startsWith("# ") || first.includes("\n## ") || first.includes("- [ ]") || first.includes("- [x]")) {
+      return first.includes("- [ ]") ? "checklist.md" : "README.md";
+    }
+
     return null;
   }
 
   function stripFileLine(code) {
     const lines = (code || "").split("\n");
-    for (let i = 0; i < Math.min(lines.length, 10); i++) {
-      if (/(?:FILE|filename)\s*:\s*/i.test(lines[i] || "")) return lines.slice(i + 1).join("\n").trimStart();
+    for (let i = 0; i < Math.min(lines.length, 15); i++) {
+      if (/(?:FILE|filename|Arquivo|Caminho)\s*:\s*/i.test(lines[i] || "")) {
+        return lines.slice(i + 1).join("\n").trimStart();
+      }
     }
     return code || "";
   }
 
+  /** Mapeia linguagem de código para extensão de arquivo (expandido v3.2) */
   function langToExt(lang) {
-    const map = { js: "js", javascript: "js", jsx: "jsx", ts: "ts", typescript: "ts", tsx: "tsx", py: "py", python: "py", html: "html", css: "css", json: "json", md: "md" };
+    const map = {
+      js: "js", javascript: "js",
+      jsx: "jsx",
+      ts: "ts", typescript: "ts",
+      tsx: "tsx",
+      py: "py", python: "py",
+      html: "html",
+      css: "css",
+      scss: "scss", sass: "scss",
+      less: "less",
+      json: "json",
+      md: "md", markdown: "md",
+      yaml: "yaml", yml: "yaml",
+      sh: "sh", bash: "sh", shell: "sh",
+      sql: "sql",
+      graphql: "graphql", gql: "graphql",
+      prisma: "prisma",
+      toml: "toml",
+      go: "go", golang: "go",
+      rs: "rs", rust: "rs",
+      rb: "rb", ruby: "rb",
+      java: "java",
+      kt: "kt", kotlin: "kt",
+      swift: "swift",
+      vue: "vue",
+      svelte: "svelte",
+      astro: "astro",
+      xml: "xml",
+      dockerfile: "dockerfile",
+    };
     return map[(lang || "").toLowerCase()] || "";
   }
 
@@ -240,6 +425,7 @@
 
   function isSnippetOrCommand(content) {
     const trimmed = (content || "").trim();
+    // Exceção: arquivos de documentação markdown (checklist, docs)
     if (/^FILE:\s*docs[\\/]fase-/im.test(trimmed) || /^FILE:\s*fase-\d+\.md/im.test(trimmed)) return false;
     if (trimmed.length < MIN_FILE_CONTENT_LENGTH) return true;
     const lines = trimmed.split(/\r?\n/).filter(function (l) { return l.trim().length > 0; });
@@ -250,85 +436,120 @@
     return false;
   }
 
+  /**
+   * Converte um array de blocos de código em arquivos.
+   * Cada bloco pode ter um `preElement` associado para buscar o nome no DOM.
+   */
   function blocksToFiles(blocks) {
     return blocks.map(function (block, i) {
+      // Prioridade 1: Detecta nome no contexto PRÉ-BLOCO do DOM
+      const fromDomContext = block.preElement ? extractPathFromPreElement(block.preElement) : null;
+      // Prioridade 2: Detecta FILE: dentro do código (primeiras linhas)
       const pathFromFirstLine = parseFileFromFirstLine(block.code);
       const pathFromContent = pathFromFirstLine || parseFileFromContent(block.code);
-      const inferred = inferFilenameFromContent(block.code);
+      // Prioridade 3: Inferência pelo conteúdo
+      const inferred = fromDomContext || pathFromContent || inferFilenameFromContent(block.code);
+      // Prioridade 4: Usa extensão da linguagem como fallback
       const ext = langToExt(block.language);
-      const name = pathFromContent || inferred || (ext ? "file_" + i + "." + ext : "file_" + i + ".txt");
+      const name = inferred || (ext ? "file_" + i + "." + ext : "file_" + i + ".txt");
+      // Remove o comentário FILE: do conteúdo se o nome veio de dentro do bloco
       const content = pathFromContent ? stripFileLine(block.code) : block.code.trim();
       return { name, content };
     });
   }
 
+  /**
+   * Extrai blocos de código do DOM do AI Studio.
+   *
+   * MELHORIAS v3.2:
+   * - Deduplicação por hash do CONTEÚDO COMPLETO (não só os primeiros 80 chars)
+   * - Preserva referência ao `preElement` para buscar o nome no DOM
+   * - Seletores mais abrangentes para diferentes formatos de UI
+   */
   function extractCodeBlocks() {
     const blocks = [];
+    // Hash simples do conteúdo completo para deduplicação robusta
     const seen = new Set();
-    function addBlock(code, language) {
-      const key = (code || "").trim().slice(0, 80);
-      if (!key || seen.has(key)) return;
-      seen.add(key);
-      blocks.push({ code: (code || "").trim(), language: language || undefined });
+    function hashContent(code) {
+      // djb2 hash simples — suficiente para deduplicação de texto
+      let h = 5381;
+      for (let i = 0; i < code.length; i++) {
+        h = ((h << 5) + h) ^ code.charCodeAt(i);
+        h = h >>> 0; // converte para unsigned 32-bit
+      }
+      return h.toString(36);
     }
-    document.querySelectorAll("pre").forEach((pre) => {
-      const code = pre.querySelector("code");
-      const text = code ? code.textContent : pre.textContent;
+
+    function addBlock(code, language, preElement) {
+      const trimmedCode = (code || "").trim();
+      if (!trimmedCode || trimmedCode.length < 10) return;
+      const key = hashContent(trimmedCode);
+      if (seen.has(key)) return;
+      seen.add(key);
+      blocks.push({ code: trimmedCode, language: language || undefined, preElement: preElement || null });
+    }
+
+    // Estratégia 1 (principal): Busca todos os <pre> com seus <code> e detecta linguagem
+    const preElements = document.querySelectorAll("pre");
+    preElements.forEach((pre) => {
+      const codeEl = pre.querySelector("code");
+      const text = codeEl ? codeEl.textContent : pre.textContent;
       if (text && text.trim().length > 10) {
-        const lang = (code && code.className && code.className.match(/language-(\w+)/)) ? code.className.match(/language-(\w+)/)[1] : "";
-        addBlock(text, lang);
+        let lang = "";
+        if (codeEl && codeEl.className) {
+          // Detecta linguagem pelo className (ex: "language-typescript", "language-python")
+          const langMatch = codeEl.className.match(/language-([\w-]+)/);
+          if (langMatch) lang = langMatch[1];
+        }
+        // Se não achou no <code>, tenta no <pre>
+        if (!lang && pre.className) {
+          const langMatch = pre.className.match(/language-([\w-]+)/);
+          if (langMatch) lang = langMatch[1];
+        }
+        // Também verifica atributo data-language
+        if (!lang) {
+          lang = pre.getAttribute("data-language") || codeEl?.getAttribute("data-language") || "";
+        }
+        addBlock(text, lang, pre);
       }
     });
+
+    // Estratégia 2: <code> inline (se não há <pre>)
     if (blocks.length === 0) {
       document.querySelectorAll("code").forEach((el) => {
         const text = el.textContent?.trim();
-        if (text && text.length > 20) addBlock(text, undefined);
+        if (text && text.length > 20) addBlock(text, undefined, el.parentElement);
       });
     }
+
+    // Estratégia 3: Containers de código por classe
     if (blocks.length === 0) {
       document.querySelectorAll('[class*="code-block"], [class*="markdown"], [data-code-block]').forEach((el) => {
         const pre = el.querySelector("pre") || el;
         const text = (pre.textContent || el.textContent || "").trim();
-        if (text.length > 20) addBlock(text, undefined);
+        if (text.length > 20) addBlock(text, undefined, pre);
       });
     }
-    if (blocks.length === 0) {
-      document.querySelectorAll("pre").forEach((pre) => {
-        const text = (pre.textContent || "").trim();
-        if (text.length > 20) addBlock(text, undefined);
-      });
-    }
-    if (blocks.length === 0) {
-      document.querySelectorAll("[class*='message'], [class*='response'], [class*='content']").forEach((el) => {
-        const raw = (el.textContent || "").trim();
-        const match = raw.match(/```[\w]*\n([\s\S]*?)```/g);
-        if (match) {
-          match.forEach((m) => {
-            const inner = m.replace(/^```[\w]*\n/, "").replace(/```$/, "").trim();
-            if (inner.length > 20) addBlock(inner, undefined);
-          });
-        }
-      });
-    }
+
+    // Estratégia 4: Regex no texto do DOM (último recurso)
     if (blocks.length === 0) {
       const root = document.querySelector("main") || document.querySelector("[role='main']") || document.body;
-      const raw = (root && root.textContent) ? root.textContent : document.body.textContent || "";
-      const fileMarker = /FILE:\s*(docs[\\/])?fase-\d+\.md/gi;
-      const parts = raw.split(/(?=FILE:\s*(?:docs[\\/])?fase-\d+\.md)/i);
-      parts.forEach(function (part) {
-        const trimmed = part.trim();
-        if (!trimmed || trimmed.length < 15) return;
-        const firstLine = trimmed.split(/\r?\n/)[0] || "";
-        if (!/FILE:\s*(docs[\\/])?fase-\d+\.md/i.test(firstLine)) return;
-        addBlock(trimmed, "markdown");
-      });
+      const rawText = (root && root.textContent) ? root.textContent : document.body.textContent || "";
+      const fenceRegex = /```([\w-]*)\n([\s\S]*?)```/g;
+      let match;
+      while ((match = fenceRegex.exec(rawText)) !== null) {
+        const lang = match[1] || "";
+        const code = match[2]?.trim() || "";
+        if (code.length > 10) addBlock(code, lang, null);
+      }
     }
+
     return blocks;
   }
 
   const DEBOUNCE_AFTER_STOP_MS = 200;
   const DEBOUNCE_AFTER_SHARE_MS = 150;
-  const CAPTURE_TIMEOUT_MS = 600000; // 10 minutos (antes 90s)
+  const CAPTURE_TIMEOUT_MS = 600000; // 10 minutos
   const POLL_INTERVAL_MS = 200;
 
   function waitForResponseComplete() {
@@ -405,7 +626,6 @@
         const file = new File([blob], "image.png", { type: img.mimeType });
         dataTransfer.items.add(file);
       }
-
       const pasteEvent = new ClipboardEvent("paste", {
         bubbles: true,
         cancelable: true,
@@ -413,7 +633,6 @@
       });
       input.focus();
       input.dispatchEvent(pasteEvent);
-      // Pequena pausa para o UI processar a imagem colada
       await new Promise(r => setTimeout(r, 500));
     } catch (err) {
       console.error("[EVA-AIStudio] Erro ao colar imagem:", err);
@@ -435,37 +654,40 @@
       return;
     }
 
-    // 1. Cola imagens se houver
     if (images && images.length > 0) {
       await pasteImages(input, images);
     }
 
-    // 2. Insere texto
     if (prompt.trim()) {
       setInputValue(input, prompt);
     }
 
-    await new Promise((r) => setTimeout(r, 800)); // Aumentado delay para garantir processamento da imagem
+    await new Promise((r) => setTimeout(r, 800));
 
     if (!submitPrompt()) {
       sendToBackground("EVA_ERROR", { message: "Botão de envio não encontrado." });
       return;
     }
     try {
-      const blocks = await waitForResponseComplete();
-      if (blocks.length === 0) {
+      const rawBlocks = await waitForResponseComplete();
+      if (rawBlocks.length === 0) {
         sendToBackground("EVA_CODE_CAPTURED", { code: "", files: [] });
       } else {
-        const allFiles = blocksToFiles(blocks);
-        const files = allFiles.filter(function (f) { return !isSnippetOrCommand(f.content); });
+        // Converte blocos em arquivos (usando referências ao DOM para detectar nome)
+        const allFiles = blocksToFiles(rawBlocks);
+        // Remove o campo preElement antes de enviar (não é serializável)
+        const files = allFiles
+          .filter(function (f) { return !isSnippetOrCommand(f.content); })
+          .map(function (f) { return { name: f.name, content: f.content }; });
+
+        console.log("[EVA-AIStudio] Arquivos capturados:", files.map(f => f.name));
+
         if (files.length === 0) {
           sendToBackground("EVA_CODE_CAPTURED", { code: "", files: [] });
+        } else if (files.length === 1) {
+          sendToBackground("EVA_CODE_CAPTURED", { code: files[0].content, filename: files[0].name, files });
         } else {
-          if (files.length === 1) {
-            sendToBackground("EVA_CODE_CAPTURED", { code: files[0].content, filename: files[0].name, files });
-          } else {
-            sendToBackground("EVA_CODE_CAPTURED", { files });
-          }
+          sendToBackground("EVA_CODE_CAPTURED", { files });
         }
       }
     } catch (e) {
